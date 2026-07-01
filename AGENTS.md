@@ -1,25 +1,5 @@
-import type { Metadata } from "next";
-import "./globals.css";
-import Sidebar from "@/components/Sidebar";
+<!-- BEGIN:nextjs-agent-rules -->
+# This is NOT the Next.js you know
 
-export const metadata: Metadata = {
-  title: "SMM Order Automator",
-  description: "Automate SMM panel orders from your social posts",
-};
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="en">
-      <body>
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <main className="flex-1 p-8 max-w-5xl">{children}</main>
-        </div>
-      </body>
-    </html>
-  );
-}
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
+<!-- END:nextjs-agent-rules -->
