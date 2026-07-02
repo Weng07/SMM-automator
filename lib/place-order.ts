@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "./supabase";
 import { placePanelOrder } from "./smm-panel";
 
-type Platform = "x" | "instagram" | "tiktok" | "linkedin";
+type Platform = "x" | "instagram" | "tiktok" | "linkedin" | "youtube";
 type Tier = "priority" | "regular";
 
 type ServiceResult = {
@@ -13,8 +13,18 @@ type ServiceResult = {
   quantity: number;
   panel_order_id?: string | number;
   socpanel_order_id?: string | number;
+  skipped?: boolean;
   error?: string;
 };
+
+function isInstagramReel(link: string) {
+  try {
+    const url = new URL(link);
+    return url.hostname.includes("instagram.com") && url.pathname.includes("/reel/");
+  } catch {
+    return link.includes("instagram.com/reel/");
+  }
+}
 
 async function popComments(poolId: string, count: number): Promise<string[]> {
   const supabase = supabaseAdmin();
@@ -50,7 +60,10 @@ export async function submitOrderForLink(params: {
       .eq("id", params.commentPoolId)
       .single();
 
-    if (poolCheckErr || !pool) throw new Error("Selected comment pool could not be found.");
+    if (poolCheckErr || !pool) {
+      throw new Error("Selected comment pool could not be found.");
+    }
+
     if (pool.platform !== params.platform) {
       throw new Error(
         `Comment pool is for "${pool.platform}" but this order is for "${params.platform}". Pick a matching pool.`
@@ -66,9 +79,31 @@ export async function submitOrderForLink(params: {
     .eq("enabled", true);
 
   if (presetErr) throw presetErr;
+
   if (!presets || presets.length === 0) {
     throw new Error(
       `No enabled service presets found for ${params.platform}/${params.tier}. Configure them in Services first.`
+    );
+  }
+
+  const instagramShouldOrderViews =
+    params.platform !== "instagram" || isInstagramReel(params.link);
+
+  const filteredPresets = presets.filter((preset) => {
+    if (
+      params.platform === "instagram" &&
+      preset.service_type === "views" &&
+      !instagramShouldOrderViews
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+
+  if (filteredPresets.length === 0) {
+    throw new Error(
+      `No eligible service presets found for this ${params.platform} link.`
     );
   }
 
@@ -90,10 +125,22 @@ export async function submitOrderForLink(params: {
 
   const results: ServiceResult[] = [];
 
-  for (const preset of presets) {
+  if (params.platform === "instagram" && !instagramShouldOrderViews) {
+    results.push({
+      service_type: "views",
+      panel_service_id: null,
+      socpanel_service_id: null,
+      quantity: 0,
+      skipped: true,
+      error: "Instagram views skipped because this link is not a Reel.",
+    });
+  }
+
+  for (const preset of filteredPresets) {
     const serviceId = preset.panel_service_id || preset.socpanel_service_id;
     const providerId = preset.api_provider_id ?? null;
-    const providerName = preset.api_providers?.name ?? (providerId ? "Provider" : "Default provider");
+    const providerName =
+      preset.api_providers?.name ?? (providerId ? "Provider" : "Default provider");
 
     if (!serviceId) {
       results.push({
@@ -126,6 +173,7 @@ export async function submitOrderForLink(params: {
         }
 
         const picked = await popComments(params.commentPoolId, preset.quantity);
+
         if (picked.length < preset.quantity) {
           results.push({
             service_type: preset.service_type,
@@ -185,8 +233,10 @@ export async function submitOrderForLink(params: {
     }
   }
 
-  const hasError = results.some((r) => r.error);
-  const allFailed = results.every((r) => r.error);
+  const realResults = results.filter((result) => !result.skipped);
+  const hasError = realResults.some((result) => result.error);
+  const allFailed =
+    realResults.length > 0 && realResults.every((result) => result.error);
 
   await supabase
     .from("orders")
@@ -206,10 +256,16 @@ export async function submitBatchOrders(params: {
   source?: string;
   commentPoolId?: string | null;
 }) {
-  const cleanLinks = [...new Set(params.links.map((link) => link.trim()).filter(Boolean))];
-  if (cleanLinks.length === 0) throw new Error("Add at least one post link.");
+  const cleanLinks = [
+    ...new Set(params.links.map((link) => link.trim()).filter(Boolean)),
+  ];
+
+  if (cleanLinks.length === 0) {
+    throw new Error("Add at least one post link.");
+  }
 
   const orders = [];
+
   for (const link of cleanLinks) {
     try {
       orders.push(
@@ -222,7 +278,11 @@ export async function submitBatchOrders(params: {
         })
       );
     } catch (e: any) {
-      orders.push({ link, error: e?.message ?? "Failed to submit this link.", hasError: true });
+      orders.push({
+        link,
+        error: e?.message ?? "Failed to submit this link.",
+        hasError: true,
+      });
     }
   }
 
