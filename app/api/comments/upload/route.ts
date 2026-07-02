@@ -2,12 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import Papa from "papaparse";
 import { supabaseAdmin } from "@/lib/supabase";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const supabase = supabaseAdmin();
-  const { data: pools, error } = await supabase
+  const { searchParams } = new URL(req.url);
+  const platform = searchParams.get("platform");
+
+  let query = supabase
     .from("comment_pools")
-    .select("id, name, created_at")
+    .select("id, name, platform, created_at")
     .order("created_at", { ascending: false });
+
+  if (platform) query = query.eq("platform", platform);
+
+  const { data: pools, error } = await query;
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -31,9 +38,13 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     const name = (formData.get("name") as string) || "Untitled pool";
+    const platform = formData.get("platform") as string | null;
 
     if (!file) {
       return NextResponse.json({ error: "No file uploaded." }, { status: 400 });
+    }
+    if (!platform) {
+      return NextResponse.json({ error: "platform is required." }, { status: 400 });
     }
 
     const text = await file.text();
@@ -53,7 +64,7 @@ export async function POST(req: NextRequest) {
     const supabase = supabaseAdmin();
     const { data: pool, error: poolErr } = await supabase
       .from("comment_pools")
-      .insert({ name })
+      .insert({ name, platform })
       .select()
       .single();
 

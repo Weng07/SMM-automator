@@ -5,17 +5,15 @@ export async function GET() {
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from("app_settings")
-    .select("socpanel_api_url, x_bearer_token, socpanel_api_key")
+    .select("socpanel_api_url, socpanel_api_key")
     .eq("id", 1)
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Mask secrets before sending to the browser — only show whether they're set.
   return NextResponse.json({
     socpanel_api_url: data.socpanel_api_url,
     socpanel_api_key_set: !!data.socpanel_api_key,
-    x_bearer_token_set: !!data.x_bearer_token,
   });
 }
 
@@ -29,9 +27,6 @@ export async function POST(req: NextRequest) {
   }
   if (typeof body.socpanel_api_url === "string" && body.socpanel_api_url.length > 0) {
     update.socpanel_api_url = body.socpanel_api_url;
-  }
-  if (typeof body.x_bearer_token === "string" && body.x_bearer_token.length > 0) {
-    update.x_bearer_token = body.x_bearer_token;
   }
 
   const { error } = await supabase.from("app_settings").update(update).eq("id", 1);

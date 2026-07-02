@@ -9,8 +9,6 @@ create table if not exists app_settings (
   id int primary key default 1,
   socpanel_api_key text,
   socpanel_api_url text default 'https://socpanel.com/api/v2',
-  x_bearer_token text,
-  cron_secret text,
   constraint single_row check (id = 1)
 );
 insert into app_settings (id) values (1) on conflict (id) do nothing;
@@ -37,22 +35,11 @@ create table if not exists service_presets (
 );
 
 -- A pool of comments uploaded via CSV, shuffled and assigned one-per-link.
+-- Pools are platform-specific (an X pool shouldn't be usable on a LinkedIn order).
 create table if not exists comment_pools (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  created_at timestamptz not null default now()
-);
-
--- X accounts to auto-poll. Only X supports full automation; other platforms
--- are order-by-pasted-link.
-create table if not exists watched_x_accounts (
-  id uuid primary key default gen_random_uuid(),
-  handle text not null unique, -- without the @
-  tier tier_t not null default 'priority',
-  last_seen_tweet_id text,
-  poll_interval_minutes int not null default 5,
-  active boolean not null default true,
-  comment_pool_id uuid references comment_pools(id), -- used when tier's presets include a 'comments' service
+  platform platform_t not null,
   created_at timestamptz not null default now()
 );
 
@@ -67,13 +54,14 @@ create table if not exists comment_pool_items (
 create index if not exists idx_comment_pool_items_unused
   on comment_pool_items (pool_id) where used = false;
 
--- Every order placed (auto or manual), and what happened.
+-- Every order placed, and what happened. All orders are triggered by a
+-- pasted link — no platform auto-detects posts.
 create table if not exists orders (
   id uuid primary key default gen_random_uuid(),
   platform platform_t not null,
   tier tier_t not null,
   link text not null,
-  source text not null default 'manual', -- 'auto_x' | 'manual'
+  source text not null default 'manual',
   status order_status_t not null default 'pending',
   comment_pool_id uuid references comment_pools(id),
   services_ordered jsonb not null default '[]', -- [{service_type, socpanel_service_id, quantity, socpanel_order_id, error}]
@@ -82,3 +70,23 @@ create table if not exists orders (
 );
 
 create index if not exists idx_orders_created_at on orders (created_at desc);
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- MIGRATION: if you already ran an earlier version of this schema that
+-- included watched_x_accounts (auto-polling X), drop it — we moved to
+-- manual paste for every platform, including X, to stay within X's API
+-- terms of service:
+--
+--   drop table if exists watched_x_accounts;
+--   alter table app_settings drop column if exists x_bearer_token;
+--   alter table app_settings drop column if exists cron_secret;
+-- ─────────────────────────────────────────────────────────────────────────
+
+-- ─────────────────────────────────────────────────────────────────────────
+-- MIGRATION: if you already ran this schema before comment_pools had a
+-- `platform` column, run this block once instead of the create table above:
+--
+--   alter table comment_pools add column if not exists platform platform_t;
+--   update comment_pools set platform = 'x' where platform is null; -- adjust per pool
+--   alter table comment_pools alter column platform set not null;
+-- ─────────────────────────────────────────────────────────────────────────

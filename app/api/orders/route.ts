@@ -35,7 +35,6 @@ export async function POST(req: NextRequest) {
       platform,
       tier,
       link,
-      source: "manual",
       commentPoolId: commentPoolId ?? null,
     });
 

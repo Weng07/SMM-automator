@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { PLATFORM_META, PLATFORMS, PlatformKey } from "@/lib/platform-meta";
+import { UploadCloud } from "lucide-react";
 
-type Pool = { id: string; name: string; unused_count: number; created_at: string };
+type Pool = { id: string; name: string; platform: string; unused_count: number; created_at: string };
 
 export default function CommentsPage() {
   const [pools, setPools] = useState<Pool[]>([]);
+  const [filterPlatform, setFilterPlatform] = useState<PlatformKey>("x");
+  const [uploadPlatform, setUploadPlatform] = useState<PlatformKey>("x");
   const [name, setName] = useState("");
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -31,6 +35,7 @@ export default function CommentsPage() {
       const form = new FormData();
       form.set("file", file);
       form.set("name", name || file.name);
+      form.set("platform", uploadPlatform);
       const res = await fetch("/api/comments/upload", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -45,51 +50,88 @@ export default function CommentsPage() {
     }
   }
 
+  const visiblePools = pools.filter((p) => p.platform === filterPlatform);
+
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-7">
       <div>
-        <h1 className="text-xl font-semibold">Comment Pools</h1>
-        <p className="text-sm text-[#8b929c] mt-1">
-          Upload a CSV of comments (one per row, or one per line in the first column). Each
-          order that uses "custom comments" pulls unique, unused comments from the pool you
-          assign to it.
+        <h1 className="display text-2xl font-semibold">Comment Pools</h1>
+        <p className="text-sm text-[#8b8fa3] mt-1">
+          Pools are platform-specific. Each order pulls a fresh, never-reused comment from the pool you assign.
         </p>
       </div>
 
-      <form onSubmit={upload} className="panel p-5 flex flex-col gap-4">
-        <div className="text-sm font-medium">Upload a new pool</div>
+      <form onSubmit={upload} className="panel p-6 flex flex-col gap-5">
+        <div className="text-sm font-semibold">Upload a new pool</div>
         <div>
-          <label className="text-xs text-[#8b929c] block mb-1">Pool name</label>
-          <input
-            className="input"
-            placeholder="e.g. July comments batch"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
+          <label className="text-xs text-[#8b8fa3] block mb-2">Platform</label>
+          <div className="grid grid-cols-4 gap-2">
+            {PLATFORMS.map((p) => {
+              const meta = PLATFORM_META[p];
+              const Icon = meta.icon;
+              return (
+                <button
+                  type="button"
+                  key={p}
+                  onClick={() => setUploadPlatform(p)}
+                  className={`platform-pill ${uploadPlatform === p ? "active" : ""}`}
+                >
+                  <Icon size={15} style={{ color: meta.color }} />
+                  {meta.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div>
-          <label className="text-xs text-[#8b929c] block mb-1">CSV file</label>
-          <input ref={fileRef} type="file" accept=".csv,.txt" className="input" required />
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs text-[#8b8fa3] block mb-1">Pool name</label>
+            <input
+              className="input"
+              placeholder="e.g. July comments batch"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-[#8b8fa3] block mb-1">CSV file</label>
+            <input ref={fileRef} type="file" accept=".csv,.txt" className="input" required />
+          </div>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn" type="submit" disabled={uploading}>
+          <button className="btn flex items-center gap-2" type="submit" disabled={uploading}>
+            <UploadCloud size={14} />
             {uploading ? "Uploading…" : "Upload"}
           </button>
-          {msg && <span className="text-sm text-[#8b929c]">{msg}</span>}
+          {msg && <span className="text-sm text-[#8b8fa3]">{msg}</span>}
         </div>
       </form>
 
-      <div className="panel p-5">
-        <div className="text-sm font-medium mb-4">Pools</div>
+      <div className="panel p-6">
+        <div className="flex items-center gap-2 mb-4">
+          {PLATFORMS.map((p) => {
+            const meta = PLATFORM_META[p];
+            const Icon = meta.icon;
+            return (
+              <button
+                key={p}
+                onClick={() => setFilterPlatform(p)}
+                className={`platform-pill ${p === filterPlatform ? "active" : ""}`}
+              >
+                <Icon size={15} style={{ color: meta.color }} />
+                {meta.label}
+              </button>
+            );
+          })}
+        </div>
         <div className="flex flex-col gap-2">
-          {pools.length === 0 && <div className="text-sm text-[#8b929c]">No pools yet.</div>}
-          {pools.map((p) => (
-            <div
-              key={p.id}
-              className="border border-[#23272e] rounded-md p-3 flex items-center justify-between"
-            >
+          {visiblePools.length === 0 && (
+            <div className="text-sm text-[#8b8fa3]">No pools yet for {PLATFORM_META[filterPlatform].label}.</div>
+          )}
+          {visiblePools.map((p) => (
+            <div key={p.id} className="panel-alt p-4 flex items-center justify-between">
               <span className="text-sm">{p.name}</span>
-              <span className="mono text-xs text-[#8b929c]">{p.unused_count} unused left</span>
+              <span className="mono text-xs text-[#8b8fa3]">{p.unused_count} unused left</span>
             </div>
           ))}
         </div>

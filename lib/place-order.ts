@@ -38,10 +38,28 @@ export async function submitOrderForLink(params: {
   platform: Platform;
   tier: Tier;
   link: string;
-  source: "auto_x" | "manual";
+  source?: "manual";
   commentPoolId?: string | null;
 }) {
   const supabase = supabaseAdmin();
+
+  // 0. If a comment pool was passed, make sure it actually belongs to this platform.
+  if (params.commentPoolId) {
+    const { data: pool, error: poolCheckErr } = await supabase
+      .from("comment_pools")
+      .select("id, platform")
+      .eq("id", params.commentPoolId)
+      .single();
+
+    if (poolCheckErr || !pool) {
+      throw new Error("Selected comment pool could not be found.");
+    }
+    if (pool.platform !== params.platform) {
+      throw new Error(
+        `Comment pool is for "${pool.platform}" but this order is for "${params.platform}". Pick a matching pool.`
+      );
+    }
+  }
 
   // 1. Pull the enabled presets for this platform + tier.
   const { data: presets, error: presetErr } = await supabase
@@ -65,7 +83,7 @@ export async function submitOrderForLink(params: {
       platform: params.platform,
       tier: params.tier,
       link: params.link,
-      source: params.source,
+      source: params.source ?? "manual",
       status: "pending",
       comment_pool_id: params.commentPoolId ?? null,
       services_ordered: [],

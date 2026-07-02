@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PLATFORM_META, PLATFORMS, PlatformKey } from "@/lib/platform-meta";
+import { RefreshCw } from "lucide-react";
 
 type SocService = { service: string; name: string; rate: string; min: string; max: string };
 type Preset = {
@@ -13,7 +15,6 @@ type Preset = {
   enabled: boolean;
 };
 
-const PLATFORMS = ["x", "instagram", "tiktok", "linkedin"];
 const TIERS = ["priority", "regular"];
 
 const DEFAULT_SERVICE_TYPES: Record<string, string[]> = {
@@ -26,7 +27,7 @@ const DEFAULT_SERVICE_TYPES: Record<string, string[]> = {
 export default function ServicesPage() {
   const [socServices, setSocServices] = useState<SocService[]>([]);
   const [presets, setPresets] = useState<Preset[]>([]);
-  const [platform, setPlatform] = useState("x");
+  const [platform, setPlatform] = useState<PlatformKey>("x");
   const [loadingServices, setLoadingServices] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,11 +62,7 @@ export default function ServicesPage() {
     );
   }
 
-  async function savePreset(
-    tier: string,
-    serviceType: string,
-    updates: Partial<Preset>
-  ) {
+  async function savePreset(tier: string, serviceType: string, updates: Partial<Preset>) {
     const existing = getPreset(tier, serviceType);
     const body = {
       platform,
@@ -87,53 +84,57 @@ export default function ServicesPage() {
   const serviceTypes = DEFAULT_SERVICE_TYPES[platform] ?? [];
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-7">
       <div>
-        <h1 className="text-xl font-semibold">Services</h1>
-        <p className="text-sm text-[#8b929c] mt-1">
+        <h1 className="display text-2xl font-semibold">Services</h1>
+        <p className="text-sm text-[#8b8fa3] mt-1">
           Set quantities per platform and tier, and map each to a real SocPanel service ID.
         </p>
       </div>
 
-      <div className="flex items-center gap-3">
-        {PLATFORMS.map((p) => (
-          <button
-            key={p}
-            onClick={() => setPlatform(p)}
-            className={p === platform ? "btn" : "btn-secondary"}
-          >
-            {p}
-          </button>
-        ))}
+      <div className="flex items-center gap-2">
+        {PLATFORMS.map((p) => {
+          const meta = PLATFORM_META[p];
+          const Icon = meta.icon;
+          return (
+            <button
+              key={p}
+              onClick={() => setPlatform(p)}
+              className={`platform-pill ${p === platform ? "active" : ""}`}
+            >
+              <Icon size={15} style={{ color: meta.color }} />
+              {meta.label}
+            </button>
+          );
+        })}
         <div className="flex-1" />
-        <button className="btn-secondary" onClick={loadSocServices} disabled={loadingServices}>
+        <button className="btn-secondary flex items-center gap-2" onClick={loadSocServices} disabled={loadingServices}>
+          <RefreshCw size={14} className={loadingServices ? "animate-spin" : ""} />
           {loadingServices ? "Loading…" : "Pull services from SocPanel"}
         </button>
       </div>
 
-      {error && <div className="text-sm text-[#f0555a]">{error}</div>}
+      {error && <div className="text-sm text-[#ef4444]">{error}</div>}
 
       {TIERS.map((tier) => (
-        <div key={tier} className="panel p-5">
+        <div key={tier} className="panel p-6">
           <div className="flex items-center gap-2 mb-4">
             <span className={`badge ${tier === "priority" ? "badge-priority" : "badge-regular"}`}>
               {tier}
             </span>
-            <span className="text-sm text-[#8b929c]">— {platform}</span>
+            <span className="text-sm text-[#8b8fa3]">— {PLATFORM_META[platform].label}</span>
           </div>
 
           <div className="flex flex-col gap-3">
             {serviceTypes.map((st) => {
               const preset = getPreset(tier, st);
               return (
-                <div key={st} className="grid grid-cols-[100px_1fr_120px_60px] gap-3 items-center">
+                <div key={st} className="grid grid-cols-[100px_1fr_120px_50px] gap-3 items-center">
                   <div className="text-sm capitalize">{st}</div>
                   <select
                     className="input"
                     value={preset?.socpanel_service_id ?? ""}
-                    onChange={(e) =>
-                      savePreset(tier, st, { socpanel_service_id: e.target.value || null })
-                    }
+                    onChange={(e) => savePreset(tier, st, { socpanel_service_id: e.target.value || null })}
                   >
                     <option value="">— map to SocPanel service —</option>
                     {socServices.map((s) => (
@@ -146,11 +147,9 @@ export default function ServicesPage() {
                     type="number"
                     className="input"
                     value={preset?.quantity ?? 0}
-                    onChange={(e) =>
-                      savePreset(tier, st, { quantity: Number(e.target.value) })
-                    }
+                    onChange={(e) => savePreset(tier, st, { quantity: Number(e.target.value) })}
                   />
-                  <label className="flex items-center gap-1 text-xs text-[#8b929c]">
+                  <label className="flex items-center gap-1.5 text-xs text-[#8b8fa3]">
                     <input
                       type="checkbox"
                       checked={preset?.enabled ?? true}
