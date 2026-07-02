@@ -151,16 +151,28 @@ export default function ServicesPage() {
 
   return (
     <div className="flex flex-col gap-7">
-      <section className="hero-panel p-7">
-        <span className="eyebrow">Service routing</span>
-        <h1 className="display text-3xl font-semibold tracking-tight mt-2">Provider map</h1>
-        <p className="text-sm text-[#9aa3c7] mt-2 max-w-2xl">
-          Connect any SMM-panel-style API, pull its catalog, search by service ID or keyword, then map each tier to the exact service.
-        </p>
+      <section
+        className="panel"
+        style={{ padding: "22px" }}
+      >
+        <div className="flex flex-col gap-2">
+          <span className="eyebrow">Service routing</span>
+          <h1 className="display text-2xl font-semibold tracking-tight">Provider map</h1>
+          <p className="text-sm text-[#9aa3c7] max-w-2xl">
+            Connect any SMM-panel-style API, pull its catalog, search by service ID or keyword, then map each tier to the exact service.
+          </p>
+        </div>
       </section>
 
-      <div className="panel p-5 flex flex-col gap-4">
-        <div className="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
+      <div className="panel flex flex-col gap-4" style={{ padding: "22px" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto",
+            gap: "14px",
+            alignItems: "end",
+          }}
+        >
           <div>
             <label className="field-label">API provider</label>
             <select className="input" value={providerId} onChange={(e) => setProviderId(e.target.value)}>
@@ -184,7 +196,12 @@ export default function ServicesPage() {
               />
             </div>
           </div>
-          <button className="btn-secondary flex items-center gap-2" onClick={loadPanelServices} disabled={loadingServices || !providerId}>
+          <button
+            className="btn-secondary flex items-center gap-2"
+            style={{ minHeight: "48px", whiteSpace: "nowrap" }}
+            onClick={loadPanelServices}
+            disabled={loadingServices || !providerId}
+          >
             <RefreshCw size={14} className={loadingServices ? "animate-spin" : ""} />
             {loadingServices ? "Pulling..." : "Pull services"}
           </button>

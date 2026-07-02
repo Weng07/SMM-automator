@@ -4,7 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { PLATFORM_META, PLATFORMS, PlatformKey } from "@/lib/platform-meta";
 import { UploadCloud } from "lucide-react";
 
-type Pool = { id: string; name: string; platform: string; unused_count: number; created_at: string };
+type Pool = {
+  id: string;
+  name: string;
+  platform: string;
+  unused_count: number;
+  created_at: string;
+};
 
 export default function CommentsPage() {
   const [pools, setPools] = useState<Pool[]>([]);
@@ -27,21 +33,37 @@ export default function CommentsPage() {
 
   async function upload(e: React.FormEvent) {
     e.preventDefault();
+
     const file = fileRef.current?.files?.[0];
     if (!file) return;
+
     setUploading(true);
     setMsg(null);
+
     try {
       const form = new FormData();
       form.set("file", file);
       form.set("name", name || file.name);
       form.set("platform", uploadPlatform);
-      const res = await fetch("/api/comments/upload", { method: "POST", body: form });
+
+      const res = await fetch("/api/comments/upload", {
+        method: "POST",
+        body: form,
+      });
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+
+      if (!res.ok) {
+        throw new Error(data.error);
+      }
+
       setMsg(`Uploaded ${data.count} comments into "${data.pool.name}".`);
       setName("");
-      if (fileRef.current) fileRef.current.value = "";
+
+      if (fileRef.current) {
+        fileRef.current.value = "";
+      }
+
       load();
     } catch (e: any) {
       setMsg(`Error: ${e.message}`);
@@ -54,27 +76,50 @@ export default function CommentsPage() {
 
   return (
     <div className="flex flex-col gap-7">
-      <div>
-        <h1 className="display text-2xl font-semibold">Comment Pools</h1>
-        <p className="text-sm text-[#8b8fa3] mt-1">
-          Pools are platform-specific. Each order pulls a fresh, never-reused comment from the pool you assign.
-        </p>
-      </div>
+      <section className="panel" style={{ padding: "22px" }}>
+        <div className="flex flex-col gap-2">
+          <span className="eyebrow">Comment engine</span>
+          <h1 className="display text-2xl font-semibold tracking-tight">
+            Comment Pools
+          </h1>
+          <p className="text-sm text-[#9aa3c7] max-w-2xl">
+            Upload platform-specific comment pools and assign them to orders so
+            each submission pulls a fresh, never-reused comment.
+          </p>
+        </div>
+      </section>
 
-      <form onSubmit={upload} className="panel p-6 flex flex-col gap-5">
+      <form
+        onSubmit={upload}
+        className="panel flex flex-col gap-5"
+        style={{ padding: "22px" }}
+      >
         <div className="text-sm font-semibold">Upload a new pool</div>
+
         <div>
-          <label className="text-xs text-[#8b8fa3] block mb-2">Platform</label>
-          <div className="grid grid-cols-4 gap-2">
+          <label className="text-xs text-[#8b8fa3] block mb-2">
+            Platform
+          </label>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+              gap: "10px",
+            }}
+          >
             {PLATFORMS.map((p) => {
               const meta = PLATFORM_META[p];
               const Icon = meta.icon;
+
               return (
                 <button
                   type="button"
                   key={p}
                   onClick={() => setUploadPlatform(p)}
-                  className={`platform-pill ${uploadPlatform === p ? "active" : ""}`}
+                  className={`platform-pill ${
+                    uploadPlatform === p ? "active" : ""
+                  }`}
                 >
                   <Icon size={15} style={{ color: meta.color }} />
                   {meta.label}
@@ -83,9 +128,18 @@ export default function CommentsPage() {
             })}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+            gap: "14px",
+          }}
+        >
           <div>
-            <label className="text-xs text-[#8b8fa3] block mb-1">Pool name</label>
+            <label className="text-xs text-[#8b8fa3] block mb-1">
+              Pool name
+            </label>
             <input
               className="input"
               placeholder="e.g. July comments batch"
@@ -93,30 +147,54 @@ export default function CommentsPage() {
               onChange={(e) => setName(e.target.value)}
             />
           </div>
+
           <div>
-            <label className="text-xs text-[#8b8fa3] block mb-1">CSV file</label>
-            <input ref={fileRef} type="file" accept=".csv,.txt" className="input" required />
+            <label className="text-xs text-[#8b8fa3] block mb-1">
+              CSV file
+            </label>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,.txt"
+              className="input"
+              required
+            />
           </div>
         </div>
+
         <div className="flex items-center gap-3">
-          <button className="btn flex items-center gap-2" type="submit" disabled={uploading}>
+          <button
+            className="btn flex items-center gap-2"
+            type="submit"
+            disabled={uploading}
+          >
             <UploadCloud size={14} />
             {uploading ? "Uploading…" : "Upload"}
           </button>
+
           {msg && <span className="text-sm text-[#8b8fa3]">{msg}</span>}
         </div>
       </form>
 
-      <div className="panel p-6">
-        <div className="flex items-center gap-2 mb-4">
+      <div className="panel flex flex-col gap-4" style={{ padding: "22px" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+            gap: "10px",
+          }}
+        >
           {PLATFORMS.map((p) => {
             const meta = PLATFORM_META[p];
             const Icon = meta.icon;
+
             return (
               <button
                 key={p}
                 onClick={() => setFilterPlatform(p)}
-                className={`platform-pill ${p === filterPlatform ? "active" : ""}`}
+                className={`platform-pill ${
+                  p === filterPlatform ? "active" : ""
+                }`}
               >
                 <Icon size={15} style={{ color: meta.color }} />
                 {meta.label}
@@ -124,14 +202,24 @@ export default function CommentsPage() {
             );
           })}
         </div>
+
         <div className="flex flex-col gap-2">
           {visiblePools.length === 0 && (
-            <div className="text-sm text-[#8b8fa3]">No pools yet for {PLATFORM_META[filterPlatform].label}.</div>
+            <div className="text-sm text-[#8b8fa3]">
+              No pools yet for {PLATFORM_META[filterPlatform].label}.
+            </div>
           )}
+
           {visiblePools.map((p) => (
-            <div key={p.id} className="panel-alt p-4 flex items-center justify-between">
+            <div
+              key={p.id}
+              className="panel-alt flex items-center justify-between"
+              style={{ padding: "16px" }}
+            >
               <span className="text-sm">{p.name}</span>
-              <span className="mono text-xs text-[#8b8fa3]">{p.unused_count} unused left</span>
+              <span className="mono text-xs text-[#8b8fa3]">
+                {p.unused_count} unused left
+              </span>
             </div>
           ))}
         </div>

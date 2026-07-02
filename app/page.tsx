@@ -3,10 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { PLATFORM_META, PLATFORMS, PlatformKey } from "@/lib/platform-meta";
 import {
-  AlertTriangle,
   CheckCircle2,
   Clock,
-  ExternalLink,
   Layers3,
   ListOrdered,
   Rocket,
@@ -32,18 +30,6 @@ type Order = {
 
 type Pool = { id: string; name: string; unused_count: number };
 
-function TierBadge({ tier }: { tier: string }) {
-  return (
-    <span className={`badge ${tier === "priority" ? "badge-priority" : "badge-regular"}`}>
-      {tier}
-    </span>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const cls = status === "submitted" ? "badge-ok" : status === "failed" ? "badge-err" : "badge-warn";
-  return <span className={`badge ${cls}`}>{status}</span>;
-}
 
 export default function OverviewPage() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -123,17 +109,13 @@ export default function OverviewPage() {
 
   return (
     <div className="flex flex-col gap-7">
-      <section className="hero-panel p-7 relative overflow-hidden">
-        <div className="relative z-10 flex flex-col gap-2">
-          <span className="eyebrow">Command deck</span>
-          <h1 className="display text-3xl font-semibold tracking-tight">Mass order cockpit</h1>
-          <p className="text-sm text-[#9aa3c7] max-w-2xl">
-            Paste one link or a whole stack, choose platform and tier, then let the panel routing run quietly in the background.
-          </p>
-        </div>
-      </section>
-
-      <div className="grid grid-cols-4 gap-4">
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: "12px",
+        }}
+      >
         <div className="stat-card">
           <div className="flex items-center gap-2 text-[#9aa3c7]">
             <ListOrdered size={14} />
@@ -164,20 +146,25 @@ export default function OverviewPage() {
         </div>
       </div>
 
-      <form onSubmit={submitOrder} className="panel p-6 flex flex-col gap-5">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold flex items-center gap-2">
-              <Rocket size={16} className="text-[#22d3ee]" />
-              New mass order
+      <div>
+        <form
+          onSubmit={submitOrder}
+          className="panel p-6 flex flex-col gap-5"
+          style={{ marginTop: "18px" , padding: "18px" }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold flex items-center gap-2">
+                <Rocket size={16} className="text-[#22d3ee]" />
+                New mass order
+              </div>
+              <p className="text-xs text-[#7f89b2] mt-1">One link per line, or comma-separated. The app will create one tracked order per link.</p>
             </div>
-            <p className="text-xs text-[#7f89b2] mt-1">One link per line, or comma-separated. The app will create one tracked order per link.</p>
+            <span className="badge badge-info">
+              <Layers3 size={12} />
+              {linkList.length} queued
+            </span>
           </div>
-          <span className="badge badge-info">
-            <Layers3 size={12} />
-            {linkList.length} queued
-          </span>
-        </div>
 
         <div>
           <label className="field-label">Platform</label>
@@ -252,55 +239,7 @@ export default function OverviewPage() {
           )}
         </div>
       </form>
-
-      <div className="panel p-6">
-        <div className="text-sm font-semibold mb-4">Recent orders</div>
-        <div className="flex flex-col gap-2">
-          {orders.length === 0 && <div className="empty-state">No orders yet. The launchpad is quiet.</div>}
-          {orders.map((o) => {
-            const meta = PLATFORM_META[o.platform as PlatformKey];
-            const Icon = meta?.icon;
-            return (
-              <div key={o.id} className="panel-alt p-4 flex flex-col gap-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    {Icon && (
-                      <div
-                        className="w-7 h-7 rounded-lg flex items-center justify-center border border-white/10"
-                        style={{ background: meta.bg }}
-                      >
-                        <Icon size={14} style={{ color: meta.color }} />
-                      </div>
-                    )}
-                    <TierBadge tier={o.tier} />
-                    <StatusBadge status={o.status} />
-                  </div>
-                  <span className="mono text-xs text-[#64708f]">
-                    {new Date(o.created_at).toLocaleString()}
-                  </span>
-                </div>
-                <a
-                  href={o.link}
-                  target="_blank"
-                  className="text-sm text-[#f5f6fa] hover:text-[#a78bfa] flex items-center gap-1.5 break-all"
-                >
-                  {o.link}
-                  <ExternalLink size={12} className="shrink-0 text-[#64708f]" />
-                </a>
-                <div className="flex flex-wrap gap-2">
-                  {o.services_ordered.map((s, i) => (
-                    <span key={i} className={`badge ${s.error ? "badge-err" : "badge-ok"}`} title={s.error}>
-                      {s.error && <AlertTriangle size={11} />}
-                      {s.service_type}: {s.quantity}
-                      {s.provider_name ? ` · ${s.provider_name}` : ""}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+    </div>
     </div>
   );
 }

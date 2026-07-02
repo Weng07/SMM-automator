@@ -1,6 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import Sidebar from "@/components/Sidebar";
+import Header from "@/components/Header";
 
 export const metadata: Metadata = {
   title: "Panelist",
@@ -8,6 +8,11 @@ export const metadata: Metadata = {
   icons: {
     icon: "/favicon.svg",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
@@ -19,7 +24,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <div className="min-h-screen">
-          <Sidebar />
+          <Header />
           <main className="mx-auto w-full max-w-[1500px] px-4 pb-8 pt-5 sm:px-6 lg:px-8">{children}</main>
         </div>
       </body>
