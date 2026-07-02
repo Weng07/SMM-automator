@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { submitOrderForLink } from "@/lib/place-order";
+import { submitBatchOrders, submitOrderForLink } from "@/lib/place-order";
 
 export async function GET(req: NextRequest) {
   const supabase = supabaseAdmin();
@@ -13,28 +13,41 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ orders: data });
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { platform, tier, link, commentPoolId } = body;
+    const { platform, tier, link, links, commentPoolId } = body;
+    const batchLinks = Array.isArray(links)
+      ? links
+      : typeof link === "string"
+        ? link.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean)
+        : [];
 
-    if (!platform || !tier || !link) {
+    if (!platform || !tier || batchLinks.length === 0) {
       return NextResponse.json(
-        { error: "platform, tier, and link are required." },
+        { error: "platform, tier, and at least one link are required." },
         { status: 400 }
       );
     }
 
-    const result = await submitOrderForLink({
+    if (batchLinks.length === 1) {
+      const result = await submitOrderForLink({
+        platform,
+        tier,
+        link: batchLinks[0],
+        commentPoolId: commentPoolId ?? null,
+      });
+      return NextResponse.json(result);
+    }
+
+    const result = await submitBatchOrders({
       platform,
       tier,
-      link,
+      links: batchLinks,
       commentPoolId: commentPoolId ?? null,
     });
 

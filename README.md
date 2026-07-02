@@ -89,3 +89,25 @@ bottom of `supabase/schema.sql`.
 Follows your usual conventions: Next.js + Supabase + Vercel, `git add [file]`
 over `git add .`, individual file edits over full ZIPs for small changes
 going forward.
+
+
+## Latest update: mass orders + multiple API providers
+
+This build adds:
+
+- Mass order submission from the Overview page. Paste one link per line or comma-separated links.
+- One tracked order row per submitted link.
+- Multiple SMM-panel API providers in Settings.
+- Service mapping per provider, platform, tier, and service type.
+- Searchable service catalog by service ID, name, type, category, rate, min, or max.
+- Futuristic SMM-panel-style UI refresh.
+
+### Required database update
+
+Run the full `supabase/schema.sql` again in Supabase SQL Editor. It is written to be migration-friendly and will add the new `api_providers`, `api_provider_id`, and `panel_service_id` fields without deleting existing orders.
+
+### How to use
+
+1. Go to Settings and add SocPanel or another SMM panel API provider.
+2. Go to Services, choose the provider, click "Pull services", search the exact service ID or keyword, then map each tier.
+3. Go to Mass Orders, paste several post links, pick platform and tier, then submit.

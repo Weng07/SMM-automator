@@ -5,7 +5,7 @@ export async function GET() {
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from("service_presets")
-    .select("*")
+    .select("*, api_providers(id, name)")
     .order("platform", { ascending: true })
     .order("tier", { ascending: true });
 
@@ -15,7 +15,16 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { platform, tier, service_type, socpanel_service_id, quantity, enabled } = body;
+  const {
+    platform,
+    tier,
+    service_type,
+    api_provider_id,
+    panel_service_id,
+    socpanel_service_id,
+    quantity,
+    enabled,
+  } = body;
 
   if (!platform || !tier || !service_type) {
     return NextResponse.json(
@@ -23,6 +32,8 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
+  const serviceId = panel_service_id ?? socpanel_service_id ?? null;
 
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
@@ -32,7 +43,9 @@ export async function POST(req: NextRequest) {
         platform,
         tier,
         service_type,
-        socpanel_service_id: socpanel_service_id ?? null,
+        api_provider_id: api_provider_id || null,
+        panel_service_id: serviceId,
+        socpanel_service_id: serviceId,
         quantity: quantity ?? 0,
         enabled: enabled ?? true,
         updated_at: new Date().toISOString(),
