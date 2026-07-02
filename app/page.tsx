@@ -33,6 +33,12 @@ type Pool = { id: string; name: string; unused_count: number };
 
 export default function OverviewPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    submitted: 0,
+    pending: 0,
+    failed: 0,
+  });
   const [pools, setPools] = useState<Pool[]>([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -53,6 +59,18 @@ export default function OverviewPage() {
     setOrders(data.orders ?? []);
   }
 
+  async function loadStats() {
+  const res = await fetch("/api/order-stats");
+  const data = await res.json();
+
+  setStats({
+    total: data.totalOrders ?? 0,
+    submitted: data.submittedOrders ?? 0,
+    pending: data.pendingOrders ?? 0,
+    failed: data.failedOrders ?? 0,
+  });
+}
+
   async function loadPools(forPlatform: string) {
     const res = await fetch(`/api/comments/upload?platform=${forPlatform}`);
     const data = await res.json();
@@ -61,6 +79,7 @@ export default function OverviewPage() {
 
   useEffect(() => {
     loadOrders();
+    loadStats();
   }, []);
 
   useEffect(() => {
@@ -93,19 +112,13 @@ export default function OverviewPage() {
 
       setLinks("");
       loadOrders();
+      loadStats();
     } catch (e: any) {
       setMsg(`Error: ${e.message}`);
     } finally {
       setLoading(false);
     }
   }
-
-  const stats = useMemo(() => {
-    const submitted = orders.filter((o) => o.status === "submitted").length;
-    const pending = orders.filter((o) => o.status === "pending").length;
-    const failed = orders.filter((o) => o.status === "failed").length;
-    return { total: orders.length, submitted, pending, failed };
-  }, [orders]);
 
   return (
     <div className="flex flex-col gap-7">

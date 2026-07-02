@@ -1,215 +1,248 @@
-import { after, NextRequest, NextResponse } from "next/server";
-import { submitBatchOrders, submitOrderForLink } from "@/lib/place-order";
+"use client";
 
-type Platform = "x" | "instagram" | "tiktok" | "linkedin" | "youtube";
+import { useEffect, useMemo, useState } from "react";
+import { PLATFORM_META, PlatformKey } from "@/lib/platform-meta";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
+  ListOrdered,
+  RefreshCw,
+  XCircle,
+} from "lucide-react";
 
-const PLATFORM_LABELS: Record<Platform, string> = {
-  x: "X",
-  instagram: "Instagram",
-  tiktok: "TikTok",
-  linkedin: "LinkedIn",
-  youtube: "YouTube",
+type Order = {
+  id: string;
+  platform: string;
+  tier: string;
+  link: string;
+  status: string;
+  services_ordered: {
+    service_type: string;
+    quantity: number;
+    provider_name?: string;
+    panel_service_id?: string;
+    error?: string;
+  }[];
+  created_at: string;
 };
 
-function detectPlatformFromLink(link: string): Platform | null {
-  const cleanLink = link.trim().toLowerCase();
-
-  try {
-    const url = new URL(cleanLink);
-    const host = url.hostname.replace(/^www\./, "");
-
-    if (
-      host === "x.com" ||
-      host === "twitter.com" ||
-      host.endsWith(".x.com") ||
-      host.endsWith(".twitter.com")
-    ) {
-      return "x";
-    }
-
-    if (
-      host === "instagram.com" ||
-      host.endsWith(".instagram.com")
-    ) {
-      return "instagram";
-    }
-
-    if (
-      host === "tiktok.com" ||
-      host === "vt.tiktok.com" ||
-      host === "vm.tiktok.com" ||
-      host.endsWith(".tiktok.com")
-    ) {
-      return "tiktok";
-    }
-
-    if (
-      host === "linkedin.com" ||
-      host.endsWith(".linkedin.com")
-    ) {
-      return "linkedin";
-    }
-
-    if (
-      host === "youtube.com" ||
-      host === "youtu.be" ||
-      host === "m.youtube.com" ||
-      host.endsWith(".youtube.com")
-    ) {
-      return "youtube";
-    }
-
-    return null;
-  } catch {
-    if (cleanLink.includes("x.com/") || cleanLink.includes("twitter.com/")) {
-      return "x";
-    }
-
-    if (cleanLink.includes("instagram.com/")) {
-      return "instagram";
-    }
-
-    if (cleanLink.includes("tiktok.com/")) {
-      return "tiktok";
-    }
-
-    if (cleanLink.includes("linkedin.com/")) {
-      return "linkedin";
-    }
-
-    if (
-      cleanLink.includes("youtube.com/") ||
-      cleanLink.includes("youtu.be/")
-    ) {
-      return "youtube";
-    }
-
-    return null;
-  }
+function TierBadge({ tier }: { tier: string }) {
+  return (
+    <span className={`badge ${tier === "priority" ? "badge-priority" : "badge-regular"}`}>
+      {tier}
+    </span>
+  );
 }
 
-function validateLinksForPlatform(platform: Platform, links: string[]) {
-  for (const link of links) {
-    const detectedPlatform = detectPlatformFromLink(link);
+function StatusBadge({ status }: { status: string }) {
+  const cls =
+    status === "submitted"
+      ? "badge-ok"
+      : status === "failed"
+        ? "badge-err"
+        : "badge-warn";
 
-    if (!detectedPlatform) {
-      return {
-        ok: false,
-        error:
-          "One of the links does not look like a supported social media URL. Please check the link and try again.",
-        link,
-      };
-    }
+  return <span className={`badge ${cls}`}>{status}</span>;
+}
 
-    if (detectedPlatform !== platform) {
-      return {
-        ok: false,
-        error: `This looks like a ${PLATFORM_LABELS[detectedPlatform]} link, but you selected ${PLATFORM_LABELS[platform]}. Please switch to ${PLATFORM_LABELS[detectedPlatform]} before submitting.`,
-        link,
-        detectedPlatform,
-        selectedPlatform: platform,
-      };
+export default function OrdersPage() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  async function loadOrders() {
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/orders?limit=100");
+      const data = await res.json();
+      setOrders(data.orders ?? []);
+    } finally {
+      setLoading(false);
     }
   }
 
-  return { ok: true };
-}
+  useEffect(() => {
+    loadOrders();
+  }, []);
 
-export async function GET(req: NextRequest) {
-  const { supabaseAdmin } = await import("@/lib/supabase");
-  const supabase = supabaseAdmin();
-  const { searchParams } = new URL(req.url);
-  const limit = Number(searchParams.get("limit") ?? "50");
+  const stats = useMemo(() => {
+    const submitted = orders.filter((o) => o.status === "submitted").length;
+    const pending = orders.filter((o) => o.status === "pending").length;
+    const failed = orders.filter((o) => o.status === "failed").length;
 
-  const { data, error } = await supabase
-    .from("orders")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(limit);
+    return {
+      total: orders.length,
+      submitted,
+      pending,
+      failed,
+    };
+  }, [orders]);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const visibleOrders = orders.filter((order) => {
+    if (statusFilter === "all") return true;
+    return order.status === statusFilter;
+  });
 
-  return NextResponse.json({ orders: data });
-}
+  return (
+    <div className="flex flex-col gap-7">
+      <section className="panel" style={{ padding: "22px" }}>
+        <div className="flex flex-col gap-2">
+          <span className="eyebrow">Order monitor</span>
+          <h1 className="display text-2xl font-semibold tracking-tight">
+            Orders
+          </h1>
+          <p className="text-sm text-[#9aa3c7] max-w-2xl">
+            Track submitted, pending, and failed orders from your mass order queue.
+          </p>
+        </div>
+      </section>
 
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const { platform, tier, link, links, commentPoolId } = body;
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+          gap: "12px",
+        }}
+      >
+        <div className="stat-card">
+          <div className="flex items-center gap-2 text-[#9aa3c7]">
+            <ListOrdered size={14} />
+            <span className="text-xs">Total orders</span>
+          </div>
+          <span className="display text-2xl font-semibold">{stats.total}</span>
+        </div>
 
-    const batchLinks = Array.isArray(links)
-      ? links
-          .map((item) => String(item).trim())
-          .filter(Boolean)
-      : typeof link === "string"
-        ? link
-            .split(/\r?\n|,/)
-            .map((item) => item.trim())
-            .filter(Boolean)
-        : [];
+        <div className="stat-card">
+          <div className="flex items-center gap-2 text-[#2ecc71]">
+            <CheckCircle2 size={14} />
+            <span className="text-xs">Submitted</span>
+          </div>
+          <span className="display text-2xl font-semibold">{stats.submitted}</span>
+        </div>
 
-    if (!platform || !tier || batchLinks.length === 0) {
-      return NextResponse.json(
-        { error: "platform, tier, and at least one link are required." },
-        { status: 400 }
-      );
-    }
+        <div className="stat-card">
+          <div className="flex items-center gap-2 text-[#fbbf24]">
+            <Clock size={14} />
+            <span className="text-xs">Pending</span>
+          </div>
+          <span className="display text-2xl font-semibold">{stats.pending}</span>
+        </div>
 
-    const allowedPlatforms: Platform[] = [
-      "x",
-      "instagram",
-      "tiktok",
-      "linkedin",
-      "youtube",
-    ];
+        <div className="stat-card">
+          <div className="flex items-center gap-2 text-[#ef4444]">
+            <XCircle size={14} />
+            <span className="text-xs">Failed</span>
+          </div>
+          <span className="display text-2xl font-semibold">{stats.failed}</span>
+        </div>
+      </div>
 
-    if (!allowedPlatforms.includes(platform)) {
-      return NextResponse.json(
-        { error: "Unsupported platform selected." },
-        { status: 400 }
-      );
-    }
+      <div className="panel flex flex-col gap-4" style={{ padding: "22px" }}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-semibold">Order list</div>
 
-    const validation = validateLinksForPlatform(platform, batchLinks);
+          <button
+            type="button"
+            className="btn-secondary flex items-center gap-2"
+            onClick={loadOrders}
+            disabled={loading}
+          >
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
 
-    if (!validation.ok) {
-      return NextResponse.json(validation, { status: 400 });
-    }
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+            gap: "10px",
+          }}
+        >
+          {["all", "submitted", "pending", "failed"].map((status) => (
+            <button
+              key={status}
+              type="button"
+              onClick={() => setStatusFilter(status)}
+              className={`platform-pill ${statusFilter === status ? "active" : ""}`}
+            >
+              {status}
+            </button>
+          ))}
+        </div>
 
-    after(async () => {
-      try {
-        if (batchLinks.length === 1) {
-          await submitOrderForLink({
-            platform,
-            tier,
-            link: batchLinks[0],
-            commentPoolId: commentPoolId ?? null,
-          });
+        <div className="flex flex-col gap-2">
+          {visibleOrders.length === 0 && (
+            <div className="empty-state">
+              No orders found for this filter.
+            </div>
+          )}
 
-          return;
-        }
+          {visibleOrders.map((order) => {
+            const meta = PLATFORM_META[order.platform as PlatformKey];
+            const Icon = meta?.icon;
 
-        await submitBatchOrders({
-          platform,
-          tier,
-          links: batchLinks,
-          commentPoolId: commentPoolId ?? null,
-        });
-      } catch (error) {
-        console.error("Background order submission failed:", error);
-      }
-    });
+            return (
+              <div
+                key={order.id}
+                className="panel-alt flex flex-col gap-3"
+                style={{ padding: "16px" }}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    {Icon && (
+                      <div
+                        className="flex items-center justify-center border border-white/10"
+                        style={{
+                          width: "30px",
+                          height: "30px",
+                          borderRadius: "5px",
+                          background: meta.bg,
+                        }}
+                      >
+                        <Icon size={14} style={{ color: meta.color }} />
+                      </div>
+                    )}
 
-    return NextResponse.json({
-      ok: true,
-      queued: true,
-      count: batchLinks.length,
-      message: "Order submitted. Processing in background.",
-    });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message ?? "Failed to submit order." },
-      { status: 500 }
-    );
-  }
+                    <TierBadge tier={order.tier} />
+                    <StatusBadge status={order.status} />
+                  </div>
+
+                  <span className="mono text-xs text-[#64708f]">
+                    {new Date(order.created_at).toLocaleString()}
+                  </span>
+                </div>
+
+                <a
+                  href={order.link}
+                  target="_blank"
+                  className="text-sm text-[#f5f6fa] hover:text-[#a78bfa] flex items-center gap-1.5 break-all"
+                >
+                  {order.link}
+                  <ExternalLink size={12} className="shrink-0 text-[#64708f]" />
+                </a>
+
+                <div className="flex flex-wrap gap-2">
+                  {order.services_ordered.map((service, index) => (
+                    <span
+                      key={index}
+                      className={`badge ${service.error ? "badge-err" : "badge-ok"}`}
+                      title={service.error}
+                    >
+                      {service.error && <AlertTriangle size={11} />}
+                      {service.service_type}: {service.quantity}
+                      {service.provider_name ? ` · ${service.provider_name}` : ""}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
