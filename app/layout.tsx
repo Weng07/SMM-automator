@@ -5,8 +5,10 @@ import Header from "@/components/Header";
 export const metadata: Metadata = {
   title: "Panelist",
   description: "Automate SMM panel orders from your social posts",
+  manifest: "/manifest.json",
   icons: {
     icon: "/favicon.svg",
+    
   },
 };
 
