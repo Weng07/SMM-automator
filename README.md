@@ -111,3 +111,9 @@ Run the full `supabase/schema.sql` again in Supabase SQL Editor. It is written t
 1. Go to Settings and add SocPanel or another SMM panel API provider.
 2. Go to Services, choose the provider, click "Pull services", search the exact service ID or keyword, then map each tier.
 3. Go to Mass Orders, paste several post links, pick platform and tier, then submit.
+
+## Logo and favicon
+
+The header logo loads from `public/logo.svg`. Replace that file with your own SVG using the same filename and the top bar will update automatically.
+
+The browser icon loads from `public/favicon.svg`, and `app/icon.svg` is also included for Next.js app icon support. Replace both if you want the browser tab icon to match your brand.

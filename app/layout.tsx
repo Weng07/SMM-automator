@@ -3,8 +3,11 @@ import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 
 export const metadata: Metadata = {
-  title: "SMM Order Automator",
+  title: "Panelist",
   description: "Automate SMM panel orders from your social posts",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
@@ -15,9 +18,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <div className="flex min-h-screen">
+        <div className="min-h-screen">
           <Sidebar />
-          <main className="flex-1 p-8 max-w-[1500px] mx-auto w-full">{children}</main>
+          <main className="mx-auto w-full max-w-[1500px] px-4 pb-8 pt-5 sm:px-6 lg:px-8">{children}</main>
         </div>
       </body>
     </html>

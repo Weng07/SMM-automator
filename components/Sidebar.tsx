@@ -3,7 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { LayoutGrid, ListChecks, MessagesSquare, SlidersHorizontal, Sparkles } from "lucide-react";
+import {
+  LayoutGrid,
+  ListChecks,
+  Menu,
+  MessagesSquare,
+  SlidersHorizontal,
+  Sparkles,
+  Wallet,
+  X,
+} from "lucide-react";
 
 const links = [
   { href: "/", label: "Mass Orders", icon: LayoutGrid },
@@ -14,6 +23,7 @@ const links = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [open, setOpen] = useState(false);
   const [balance, setBalance] = useState<{ balance: string; currency: string } | null>(null);
   const [balanceError, setBalanceError] = useState(false);
 
@@ -27,53 +37,87 @@ export default function Sidebar() {
       .catch(() => setBalanceError(true));
   }, []);
 
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
   return (
-    <aside className="w-64 border-r border-white/10 p-5 shrink-0 flex flex-col sidebar-shell">
-      <div className="flex items-center gap-3 mb-8 px-1">
-        <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#22d3ee] via-[#7c6cf0] to-[#a78bfa] flex items-center justify-center shadow-[0_0_30px_rgba(124,108,240,.35)]">
-          <Sparkles size={17} strokeWidth={2.5} className="text-white" />
-        </div>
-        <div>
-          <span className="display font-semibold text-[16px] tracking-tight block">Panelist</span>
-          <span className="text-[10px] uppercase tracking-[0.24em] text-[#64708f]">SMM cockpit</span>
-        </div>
-      </div>
+    <>
+      <header className="top-shell sticky top-0 z-40 mx-auto mt-3 flex w-[calc(100%-24px)] max-w-[1500px] items-center justify-between gap-3 px-4 py-3">
+        <Link href="/" className="flex min-w-0 items-center gap-3">
+          <img src="/logo.svg" alt="Panelist logo" className="h-10 w-10 rounded-app object-contain" />
+          <div className="min-w-0">
+            <span className="display block truncate text-[17px] font-semibold tracking-tight">Panelist</span>
+          </div>
+        </Link>
 
-      <nav className="flex flex-col gap-1 flex-1">
-        {links.map((l) => {
-          const active = pathname === l.href;
-          const Icon = l.icon;
-          return (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-colors ${
-                active
-                  ? "bg-white/8 text-[#f5f6fa] font-medium border border-white/10"
-                  : "text-[#8b96bd] hover:text-[#f5f6fa] hover:bg-white/5 border border-transparent"
-              }`}
-            >
-              <Icon size={16} strokeWidth={2} />
-              {l.label}
-            </Link>
-          );
-        })}
-      </nav>
+        <nav className="hidden items-center gap-2 lg:flex">
+          {links.map((l) => {
+            const active = pathname === l.href;
+            const Icon = l.icon;
+            return (
+              <Link key={l.href} href={l.href} className={`nav-pill ${active ? "active" : ""}`}>
+                <Icon size={15} strokeWidth={2.2} />
+                {l.label}
+              </Link>
+            );
+          })}
+        </nav>
 
-      <div className="panel-alt px-3 py-3 flex flex-col gap-1">
-        <span className="text-[10px] uppercase tracking-wide text-[#64708f] mono">
-          Default balance
-        </span>
-        {balanceError ? (
-          <span className="text-xs text-[#8b96bd]">Not connected</span>
-        ) : balance ? (
-          <span className="mono text-sm font-medium">
-            {balance.balance} {balance.currency}
-          </span>
-        ) : (
-          <span className="text-xs text-[#64708f]">Loading...</span>
-        )}
-      </div>
-    </aside>
+        <div className="flex items-center gap-2">
+          <div className="balance-chip hidden sm:flex">
+            <Wallet size={15} />
+            {balanceError ? (
+              <span>Not connected</span>
+            ) : balance ? (
+              <span className="mono">{balance.balance} {balance.currency}</span>
+            ) : (
+              <span>Loading...</span>
+            )}
+          </div>
+          <button type="button" className="hamburger-btn" onClick={() => setOpen(true)} aria-label="Open menu">
+            <Menu size={22} />
+          </button>
+        </div>
+      </header>
+
+      {open && <button className="drawer-backdrop" aria-label="Close menu" onClick={() => setOpen(false)} />}
+
+      <aside className={`drawer-panel ${open ? "open" : ""}`}>
+        <div className="flex items-center justify-between border-b border-white/10 p-4">
+          <div className="flex items-center gap-3">
+            <img src="/logo.svg" alt="Panelist logo" className="h-10 w-10 rounded-app object-contain" />
+            <span className="display text-lg font-semibold">Panelist</span>
+          </div>
+          <button type="button" className="hamburger-btn" onClick={() => setOpen(false)} aria-label="Close menu">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-2 p-4">
+          {links.map((l) => {
+            const active = pathname === l.href;
+            const Icon = l.icon;
+            return (
+              <Link key={l.href} href={l.href} className={`drawer-link ${active ? "active" : ""}`}>
+                <Icon size={17} strokeWidth={2.2} />
+                {l.label}
+              </Link>
+            );
+          })}
+        </div>
+
+        <div className="mx-4 mt-auto mb-4 panel-alt px-3 py-3">
+          <span className="mb-1 block text-[10px] uppercase tracking-wide text-[#64708f] mono">Default balance</span>
+          {balanceError ? (
+            <span className="text-xs text-[#8b96bd]">Not connected</span>
+          ) : balance ? (
+            <span className="mono text-sm font-medium">{balance.balance} {balance.currency}</span>
+          ) : (
+            <span className="text-xs text-[#64708f]">Loading...</span>
+          )}
+        </div>
+      </aside>
+    </>
   );
 }
