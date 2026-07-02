@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { PLATFORM_META, PlatformKey } from "@/lib/platform-meta";
 import {
   AlertTriangle,
@@ -48,38 +48,83 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function OrdersPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<Order[]>(() => {
+    if (typeof window === "undefined") return [];
+
+    const cached = window.localStorage.getItem("panelist_orders_page_orders");
+
+    if (!cached) return [];
+
+    try {
+      return JSON.parse(cached);
+    } catch {
+      return [];
+    }
+  });
+
+  const [stats, setStats] = useState({
+    total: 0,
+    submitted: 0,
+    pending: 0,
+    failed: 0,
+  });
+
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  const [ordersLoading, setOrdersLoading] = useState(() => {
+    if (typeof window === "undefined") return true;
+
+    return !window.localStorage.getItem("panelist_orders_page_orders");
+  });
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
 
   async function loadOrders() {
-    setLoading(true);
+    const hasCachedOrders =
+      typeof window !== "undefined" &&
+      window.localStorage.getItem("panelist_orders_page_orders");
+
+    if (!hasCachedOrders) {
+      setOrdersLoading(true);
+    }
 
     try {
-      const res = await fetch("/api/orders?limit=100");
+      const res = await fetch("/api/orders?limit=25");
       const data = await res.json();
-      setOrders(data.orders ?? []);
+      const nextOrders = data.orders ?? [];
+
+      setOrders(nextOrders);
+      window.localStorage.setItem(
+        "panelist_orders_page_orders",
+        JSON.stringify(nextOrders)
+      );
     } finally {
-      setLoading(false);
+      setOrdersLoading(false);
+    }
+  }
+
+  async function loadStats() {
+    setStatsLoading(true);
+
+    try {
+      const res = await fetch("/api/order-stats");
+      const data = await res.json();
+
+      setStats({
+        total: data.totalOrders ?? 0,
+        submitted: data.submittedOrders ?? 0,
+        pending: data.pendingOrders ?? 0,
+        failed: data.failedOrders ?? 0,
+      });
+    } finally {
+      setStatsLoading(false);
     }
   }
 
   useEffect(() => {
     loadOrders();
+    loadStats();
   }, []);
-
-  const stats = useMemo(() => {
-    const submitted = orders.filter((o) => o.status === "submitted").length;
-    const pending = orders.filter((o) => o.status === "pending").length;
-    const failed = orders.filter((o) => o.status === "failed").length;
-
-    return {
-      total: orders.length,
-      submitted,
-      pending,
-      failed,
-    };
-  }, [orders]);
 
   const visibleOrders = orders.filter((order) => {
     if (statusFilter === "all") return true;
@@ -112,7 +157,9 @@ export default function OrdersPage() {
             <ListOrdered size={14} />
             <span className="text-xs">Total orders</span>
           </div>
-          <span className="display text-2xl font-semibold">{stats.total}</span>
+          <span className="display text-2xl font-semibold">
+            {statsLoading ? "..." : stats.total}
+          </span>
         </div>
 
         <div className="stat-card">
@@ -120,7 +167,9 @@ export default function OrdersPage() {
             <CheckCircle2 size={14} />
             <span className="text-xs">Submitted</span>
           </div>
-          <span className="display text-2xl font-semibold">{stats.submitted}</span>
+          <span className="display text-2xl font-semibold">
+            {statsLoading ? "..." : stats.submitted}
+          </span>
         </div>
 
         <div className="stat-card">
@@ -128,7 +177,9 @@ export default function OrdersPage() {
             <Clock size={14} />
             <span className="text-xs">Pending</span>
           </div>
-          <span className="display text-2xl font-semibold">{stats.pending}</span>
+          <span className="display text-2xl font-semibold">
+            {statsLoading ? "..." : stats.pending}
+          </span>
         </div>
 
         <div className="stat-card">
@@ -178,6 +229,12 @@ export default function OrdersPage() {
           {visibleOrders.length === 0 && (
             <div className="empty-state">
               No orders found for this filter.
+            </div>
+          )}
+
+          {ordersLoading && orders.length === 0 && (
+            <div className="text-sm text-[#8b8fa3]">
+              Loading recent orders...
             </div>
           )}
 

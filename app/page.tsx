@@ -32,7 +32,24 @@ type Pool = { id: string; name: string; unused_count: number };
 
 
 export default function OverviewPage() {
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<Order[]>(() => {
+    if (typeof window === "undefined") return [];
+
+    const cached = window.localStorage.getItem("panelist_recent_orders");
+
+    if (!cached) return [];
+
+    try {
+      return JSON.parse(cached);
+    } catch {
+      return [];
+    }
+  });
+  const [ordersLoading, setOrdersLoading] = useState(() => {
+    if (typeof window === "undefined") return true;
+
+    return !window.localStorage.getItem("panelist_recent_orders");
+  });
   const [stats, setStats] = useState(() => {
     if (typeof window === "undefined") {
       return {
@@ -65,7 +82,11 @@ export default function OverviewPage() {
       };
     }
   });
-  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsLoading, setStatsLoading] = useState(() => {
+    if (typeof window === "undefined") return true;
+
+    return !window.localStorage.getItem("panelist_order_stats");
+  });
   const [pools, setPools] = useState<Pool[]>([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -81,13 +102,37 @@ export default function OverviewPage() {
   );
 
   async function loadOrders() {
-    const res = await fetch("/api/orders?limit=25");
-    const data = await res.json();
-    setOrders(data.orders ?? []);
+    const hasCachedOrders =
+      typeof window !== "undefined" &&
+      window.localStorage.getItem("panelist_recent_orders");
+
+    if (!hasCachedOrders) {
+      setOrdersLoading(true);
+    }
+
+    try {
+      const res = await fetch("/api/orders?limit=25");
+      const data = await res.json();
+      const nextOrders = data.orders ?? [];
+
+      setOrders(nextOrders);
+      window.localStorage.setItem(
+        "panelist_recent_orders",
+        JSON.stringify(nextOrders)
+      );
+    } finally {
+      setOrdersLoading(false);
+    }
   }
 
   async function loadStats() {
-    setStatsLoading(true);
+    const hasCachedStats =
+      typeof window !== "undefined" &&
+      window.localStorage.getItem("panelist_order_stats");
+
+    if (!hasCachedStats) {
+      setStatsLoading(true);
+    }
 
     try {
       const res = await fetch("/api/order-stats");
