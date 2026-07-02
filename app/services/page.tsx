@@ -4,7 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { PLATFORM_META, PLATFORMS, PlatformKey } from "@/lib/platform-meta";
 import { RefreshCw, Search, ServerCog } from "lucide-react";
 
-type Provider = { id: string; name: string; api_url: string; is_active: boolean };
+type Provider = {
+  id: string;
+  name: string;
+  api_url: string;
+  is_active: boolean;
+};
+
 type PanelService = {
   service: string;
   name: string;
@@ -27,15 +33,36 @@ type Preset = {
   enabled: boolean;
 };
 
+type DraftPreset = {
+  api_provider_id: string | null;
+  panel_service_id: string | null;
+  socpanel_service_id: string | null;
+  quantity: number;
+  enabled: boolean;
+};
+
 const TIERS = ["priority", "regular"];
 
-const DEFAULT_SERVICE_TYPES: Record<string, string[]> = {
-  x: ["views", "likes", "retweets", "comments"],
-  instagram: ["views", "likes", "comments", "shares"],
-  tiktok: ["views", "likes", "shares", "comments"],
-  linkedin: ["likes", "comments", "shares"],
-  youtube: ["views", "likes", "comments", "subscribers"],
+const DEFAULT_SERVICE_TYPES: Record<string, Record<string, string[]>> = {
+  regular: {
+    x: ["views", "likes", "retweets"],
+    instagram: ["views", "likes", "shares"],
+    tiktok: ["views", "likes", "shares"],
+    linkedin: ["likes", "comments", "shares"],
+    youtube: ["views", "likes", "subscribers"],
+  },
+  priority: {
+    x: ["views", "likes", "retweets", "comments"],
+    instagram: ["views", "likes", "comments", "shares"],
+    tiktok: ["views", "likes", "shares", "comments"],
+    linkedin: ["likes", "comments", "shares"],
+    youtube: ["views", "likes", "comments", "subscribers"],
+  },
 };
+
+function makeRowKey(tier: string, serviceType: string) {
+  return `${tier}:${serviceType}`;
+}
 
 export default function ServicesPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -46,12 +73,17 @@ export default function ServicesPage() {
   const [loadingServices, setLoadingServices] = useState(false);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [editingRows, setEditingRows] = useState<Record<string, DraftPreset>>({});
 
   async function loadProviders() {
     const res = await fetch("/api/providers");
     const data = await res.json();
+
     setProviders(data.providers ?? []);
-    if (!providerId && data.providers?.[0]?.id) setProviderId(data.providers[0].id);
+
+    if (!providerId && data.providers?.[0]?.id) {
+      setProviderId(data.providers[0].id);
+    }
   }
 
   async function loadPresets() {
@@ -72,7 +104,11 @@ export default function ServicesPage() {
     try {
       const res = await fetch(`/api/panel/services?providerId=${providerId}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+
+      if (!res.ok) {
+        throw new Error(data.error);
+      }
+
       setPanelServices(data.services ?? []);
     } catch (e: any) {
       setError(e.message);
@@ -86,49 +122,117 @@ export default function ServicesPage() {
     loadPresets();
   }, []);
 
+  useEffect(() => {
+    setEditingRows({});
+  }, [platform]);
+
   function getPreset(tier: string, serviceType: string): Preset | undefined {
     return presets.find(
-      (p) => p.platform === platform && p.tier === tier && p.service_type === serviceType
+      (preset) =>
+        preset.platform === platform &&
+        preset.tier === tier &&
+        preset.service_type === serviceType
     );
   }
 
-  async function savePreset(tier: string, serviceType: string, updates: Partial<Preset>) {
-    const existing = getPreset(tier, serviceType);
-    const selectedProviderId = updates.api_provider_id ?? existing?.api_provider_id ?? providerId ?? null;
+  function createDraftFromPreset(preset?: Preset): DraftPreset {
+    const savedServiceId =
+      preset?.panel_service_id ?? preset?.socpanel_service_id ?? null;
+
+    return {
+      api_provider_id: preset?.api_provider_id ?? providerId ?? null,
+      panel_service_id: savedServiceId,
+      socpanel_service_id: savedServiceId,
+      quantity: preset?.quantity ?? 0,
+      enabled: preset?.enabled ?? true,
+    };
+  }
+
+  function startEdit(tier: string, serviceType: string) {
+    const key = makeRowKey(tier, serviceType);
+    const preset = getPreset(tier, serviceType);
+
+    setEditingRows((current) => ({
+      ...current,
+      [key]: createDraftFromPreset(preset),
+    }));
+  }
+
+  function cancelEdit(tier: string, serviceType: string) {
+    const key = makeRowKey(tier, serviceType);
+
+    setEditingRows((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
+  function updateDraft(
+    tier: string,
+    serviceType: string,
+    updates: Partial<DraftPreset>
+  ) {
+    const key = makeRowKey(tier, serviceType);
+    const preset = getPreset(tier, serviceType);
+    const currentDraft = editingRows[key] ?? createDraftFromPreset(preset);
+
+    setEditingRows((current) => ({
+      ...current,
+      [key]: {
+        ...currentDraft,
+        ...updates,
+      },
+    }));
+  }
+
+  async function saveDraft(tier: string, serviceType: string) {
+    const key = makeRowKey(tier, serviceType);
+    const draft = editingRows[key];
+
+    if (!draft) {
+      return;
+    }
+
     const selectedServiceId =
-      updates.panel_service_id ??
-      updates.socpanel_service_id ??
-      existing?.panel_service_id ??
-      existing?.socpanel_service_id ??
-      null;
+      draft.panel_service_id ?? draft.socpanel_service_id ?? null;
 
     const body = {
       platform,
       tier,
       service_type: serviceType,
-      api_provider_id: selectedProviderId,
+      api_provider_id: draft.api_provider_id ?? providerId ?? null,
       panel_service_id: selectedServiceId,
       socpanel_service_id: selectedServiceId,
-      quantity: existing?.quantity ?? 0,
-      enabled: existing?.enabled ?? true,
-      ...updates,
+      quantity: draft.quantity,
+      enabled: draft.enabled,
     };
 
-    await fetch("/api/service-presets", {
+    const res = await fetch("/api/service-presets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
 
-    loadPresets();
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setError(data.error ?? "Failed to save service preset.");
+      return;
+    }
+
+    cancelEdit(tier, serviceType);
+    await loadPresets();
   }
 
-  const serviceTypes = DEFAULT_SERVICE_TYPES[platform] ?? [];
   const activeProvider = providers.find((provider) => provider.id === providerId);
 
   const filteredServices = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return panelServices.slice(0, 250);
+
+    if (!q) {
+      return panelServices.slice(0, 250);
+    }
 
     return panelServices
       .filter((service) => {
@@ -152,15 +256,15 @@ export default function ServicesPage() {
 
   return (
     <div className="flex flex-col gap-7">
-      <section
-        className="panel"
-        style={{ padding: "22px" }}
-      >
+      <section className="panel" style={{ padding: "22px" }}>
         <div className="flex flex-col gap-2">
           <span className="eyebrow">Service routing</span>
-          <h1 className="display text-2xl font-semibold tracking-tight">Provider map</h1>
+          <h1 className="display text-2xl font-semibold tracking-tight">
+            Provider map
+          </h1>
           <p className="text-sm text-[#9aa3c7] max-w-2xl">
-            Connect any SMM-panel-style API, pull its catalog, search by service ID or keyword, then map each tier to the exact service.
+            Connect any SMM-panel-style API, pull its catalog, search by service
+            ID or keyword, then map each tier to the exact service.
           </p>
         </div>
       </section>
@@ -176,7 +280,11 @@ export default function ServicesPage() {
         >
           <div>
             <label className="field-label">API provider</label>
-            <select className="input" value={providerId} onChange={(e) => setProviderId(e.target.value)}>
+            <select
+              className="input"
+              value={providerId}
+              onChange={(e) => setProviderId(e.target.value)}
+            >
               <option value="">No provider selected</option>
               {providers.map((provider) => (
                 <option key={provider.id} value={provider.id}>
@@ -185,10 +293,14 @@ export default function ServicesPage() {
               ))}
             </select>
           </div>
+
           <div>
             <label className="field-label">Search services</label>
             <div className="relative">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64708f]" />
+              <Search
+                size={15}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64708f]"
+              />
               <input
                 className="input pl-9"
                 placeholder="Search ID, name, category..."
@@ -197,21 +309,28 @@ export default function ServicesPage() {
               />
             </div>
           </div>
+
           <button
             className="btn-secondary flex items-center gap-2"
             style={{ minHeight: "48px", whiteSpace: "nowrap" }}
             onClick={loadPanelServices}
             disabled={loadingServices || !providerId}
           >
-            <RefreshCw size={14} className={loadingServices ? "animate-spin" : ""} />
+            <RefreshCw
+              size={14}
+              className={loadingServices ? "animate-spin" : ""}
+            />
             {loadingServices ? "Pulling..." : "Pull services"}
           </button>
         </div>
 
         <div className="flex items-center gap-2 text-xs text-[#7f89b2]">
           <ServerCog size={14} />
-          {activeProvider ? `${activeProvider.name} selected` : "Add providers in Settings first"}
-          {panelServices.length > 0 && ` · ${panelServices.length} services loaded · showing ${filteredServices.length}`}
+          {activeProvider
+            ? `${activeProvider.name} selected`
+            : "Add providers in Settings first"}
+          {panelServices.length > 0 &&
+            ` · ${panelServices.length} services loaded · showing ${filteredServices.length}`}
         </div>
       </div>
 
@@ -219,10 +338,14 @@ export default function ServicesPage() {
         {PLATFORMS.map((p) => {
           const meta = PLATFORM_META[p];
           const Icon = meta.icon;
+
           return (
             <button
               key={p}
-              onClick={() => setPlatform(p)}
+              onClick={() => {
+                setPlatform(p);
+                setSearch("");
+              }}
               className={`platform-pill ${p === platform ? "active" : ""}`}
             >
               <Icon size={15} style={{ color: meta.color }} />
@@ -234,76 +357,155 @@ export default function ServicesPage() {
 
       {error && <div className="panel-error">{error}</div>}
 
-      {TIERS.map((tier) => (
-        <div key={tier} className="panel p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <span className={`badge ${tier === "priority" ? "badge-priority" : "badge-regular"}`}>
-              {tier}
-            </span>
-            <span className="text-sm text-[#8b8fa3]">for {PLATFORM_META[platform].label}</span>
-          </div>
+      {TIERS.map((tier) => {
+        const serviceTypes = DEFAULT_SERVICE_TYPES[tier]?.[platform] ?? [];
 
-          <div className="flex flex-col gap-3">
-            {serviceTypes.map((st) => {
-              const preset = getPreset(tier, st);
-              const currentServiceId = preset?.panel_service_id ?? preset?.socpanel_service_id ?? "";
-              const currentMissingFromCatalog =
-                currentServiceId && !filteredServices.some((service) => service.service === currentServiceId);
+        return (
+          <div key={tier} className="panel" style={{ padding: "22px" }}>
+            <div className="flex items-center gap-2 mb-4">
+              <span
+                className={`badge ${
+                  tier === "priority" ? "badge-priority" : "badge-regular"
+                }`}
+              >
+                {tier}
+              </span>
+              <span className="text-sm text-[#8b8fa3]">
+                for {PLATFORM_META[platform].label}
+              </span>
+            </div>
 
-              return (
-                <div key={st} className="service-row">
-                  <div className="text-sm capitalize font-medium">{st}</div>
+            <div className="flex flex-col gap-3">
+              {serviceTypes.map((serviceType) => {
+                const rowKey = makeRowKey(tier, serviceType);
+                const preset = getPreset(tier, serviceType);
+                const isEditing = Boolean(editingRows[rowKey]);
+                const draft =
+                  editingRows[rowKey] ?? createDraftFromPreset(preset);
 
-                  <select
-                    className="input"
-                    value={currentServiceId}
-                    onChange={(e) =>
-                      savePreset(tier, st, {
-                        api_provider_id: providerId || preset?.api_provider_id || null,
-                        panel_service_id: e.target.value || null,
-                        socpanel_service_id: e.target.value || null,
-                      })
-                    }
-                  >
-                    <option value="">Select provider service</option>
-                    {currentMissingFromCatalog && (
-                      <option value={currentServiceId}>[{currentServiceId}] Currently saved service</option>
-                    )}
-                    {filteredServices.map((service) => (
-                      <option key={service.service} value={service.service}>
-                        [{service.service}] {service.name}
-                      </option>
-                    ))}
-                  </select>
+                const savedServiceId =
+                  preset?.panel_service_id ?? preset?.socpanel_service_id ?? "";
 
-                  <input
-                    type="number"
-                    min={0}
-                    className="input"
-                    defaultValue={preset?.quantity ?? 0}
-                    onBlur={(e) =>
-                      savePreset(tier, st, { quantity: Number(e.target.value) })
-                    }
+                const draftServiceId =
+                  draft.panel_service_id ?? draft.socpanel_service_id ?? "";
+
+                const currentServiceId = isEditing
+                  ? draftServiceId
+                  : savedServiceId;
+
+                const currentMissingFromCatalog =
+                  currentServiceId &&
+                  !filteredServices.some(
+                    (service) => service.service === currentServiceId
+                  );
+
+                return (
+                  <div
+                    key={serviceType}
+                    className="service-row"
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.currentTarget.blur();
+                      if (e.key === "Enter" && isEditing) {
+                        e.preventDefault();
+                        saveDraft(tier, serviceType);
                       }
                     }}
-                  />
-                  <label className="toggle-label">
+                  >
+                    <div className="text-sm capitalize font-medium">
+                      {serviceType}
+                    </div>
+
+                    <select
+                      className="input"
+                      value={currentServiceId}
+                      disabled={!isEditing}
+                      onChange={(e) => {
+                        const value = e.target.value || null;
+
+                        updateDraft(tier, serviceType, {
+                          api_provider_id: providerId || preset?.api_provider_id || null,
+                          panel_service_id: value,
+                          socpanel_service_id: value,
+                        });
+                      }}
+                    >
+                      <option value="">Select provider service</option>
+
+                      {currentMissingFromCatalog && (
+                        <option value={currentServiceId}>
+                          [{currentServiceId}] Currently saved service
+                        </option>
+                      )}
+
+                      {filteredServices.map((service) => (
+                        <option key={service.service} value={service.service}>
+                          [{service.service}] {service.name}
+                        </option>
+                      ))}
+                    </select>
+
                     <input
-                      type="checkbox"
-                      checked={preset?.enabled ?? true}
-                      onChange={(e) => savePreset(tier, st, { enabled: e.target.checked })}
+                      type="number"
+                      min={0}
+                      className="input"
+                      value={isEditing ? draft.quantity : preset?.quantity ?? 0}
+                      disabled={!isEditing}
+                      onChange={(e) =>
+                        updateDraft(tier, serviceType, {
+                          quantity: Number(e.target.value),
+                        })
+                      }
                     />
-                    on
-                  </label>
-                </div>
-              );
-            })}
+
+                    <label className="toggle-label">
+                      <input
+                        type="checkbox"
+                        checked={isEditing ? draft.enabled : preset?.enabled ?? true}
+                        disabled={!isEditing}
+                        onChange={(e) =>
+                          updateDraft(tier, serviceType, {
+                            enabled: e.target.checked,
+                          })
+                        }
+                      />
+                      on
+                    </label>
+
+                    <div className="flex items-center gap-2">
+                      {!isEditing ? (
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => startEdit(tier, serviceType)}
+                        >
+                          Edit
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => saveDraft(tier, serviceType)}
+                          >
+                            Save
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => cancelEdit(tier, serviceType)}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

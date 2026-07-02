@@ -11,13 +11,43 @@ type Provider = {
   created_at?: string;
 };
 
+function maskSecret(value: string) {
+  if (!value) return "";
+
+  const visibleStart = Math.max(6, Math.floor(value.length / 4));
+  const visibleEnd = Math.max(4, Math.floor(value.length / 8));
+
+  if (value.length <= visibleStart + visibleEnd) {
+    return value;
+  }
+
+  return `${value.slice(0, visibleStart)}...${value.slice(-visibleEnd)}`;
+}
+
+function maskProviderUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+
+    for (const key of ["key", "api_key", "apikey", "token"]) {
+      const value = parsed.searchParams.get(key);
+
+      if (value) {
+        parsed.searchParams.set(key, maskSecret(value));
+      }
+    }
+
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
 export default function ProvidersPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [apiUrl, setApiUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [isActive, setIsActive] = useState(true);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -36,7 +66,6 @@ export default function ProvidersPage() {
     setName("");
     setApiUrl("");
     setApiKey("");
-    setIsActive(true);
     setMsg(null);
   }
 
@@ -45,7 +74,6 @@ export default function ProvidersPage() {
     setName(provider.name);
     setApiUrl(provider.api_url);
     setApiKey("");
-    setIsActive(provider.is_active);
     setMsg("Editing provider. Leave API key blank to keep the saved key.");
   }
 
@@ -59,7 +87,6 @@ export default function ProvidersPage() {
         id: editingId,
         name,
         api_url: apiUrl,
-        is_active: isActive,
       };
 
       if (apiKey.trim()) {
@@ -132,95 +159,106 @@ export default function ProvidersPage() {
 
       <form
         onSubmit={saveProvider}
-        className="panel flex flex-col gap-5"
+        className="panel"
         style={{ padding: "22px" }}
+        autoComplete="off"
       >
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold flex items-center gap-2">
-            <PlugZap size={16} className="text-[#22d3ee]" />
-            {editingId ? "Edit API provider" : "Add API provider"}
+        <div
+          style={{
+            maxWidth: "100%",
+            display: "flex",
+            flexDirection: "column",
+            gap: "18px",
+          }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold flex items-center gap-2">
+              <PlugZap size={16} className="text-[#22d3ee]" />
+              {editingId ? "Edit API provider" : "Add API provider"}
+            </div>
+
+            {editingId && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={resetForm}
+                disabled={loading}
+              >
+                Cancel edit
+              </button>
+            )}
           </div>
 
-          {editingId && (
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={resetForm}
-              disabled={loading}
-            >
-              Cancel edit
-            </button>
-          )}
-        </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+              gap: "14px",
+              alignItems: "end",
+              width: "100%",
+            }}
+          >
+            <div>
+              <label className="field-label">Provider name</label>
+              <input
+                className="input"
+                name="provider_name_field"
+                autoComplete="off"
+                placeholder="e.g. SocPanel"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            </div>
 
-        <div className="provider-form-grid">
-          <div>
-            <label className="field-label">Provider name</label>
-            <input
-              className="input"
-              placeholder="e.g. SocPanel"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
+            <div>
+              <label className="field-label">
+                API key{" "}
+                <span className="text-[#565a6e]">
+                  {editingId ? "(leave blank to keep current key)" : ""}
+                </span>
+              </label>
+              <input
+                className="input"
+                name="provider_api_secret_field"
+                autoComplete="new-password"
+                type="password"
+                placeholder="Paste API key"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                required={!editingId}
+              />
+            </div>
           </div>
 
           <div>
             <label className="field-label">API URL</label>
             <input
               className="input"
+              name="provider_api_url_field"
+              autoComplete="off"
               placeholder="https://example.com/api/v2"
               value={apiUrl}
               onChange={(e) => setApiUrl(e.target.value)}
               required
             />
           </div>
-        </div>
 
-        <div className="provider-key-grid">
           <div>
-            <label className="field-label">
-              API key{" "}
-              <span className="text-[#565a6e]">
-                {editingId ? "(leave blank to keep current key)" : ""}
-              </span>
-            </label>
-            <input
-              className="input"
-              type="password"
-              placeholder="Paste API key"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              required={!editingId}
-            />
+            <button
+              className="btn flex items-center justify-center gap-2"
+              type="submit"
+              disabled={loading}
+              style={{ minHeight: "52px", whiteSpace: "nowrap" }}
+            >
+              {editingId ? <Save size={14} /> : <Plus size={14} />}
+              {loading
+                ? "Saving..."
+                : editingId
+                  ? "Save provider"
+                  : "Add provider"}
+            </button>
           </div>
-
-          <label
-            className="panel-alt flex items-center justify-between"
-            style={{ padding: "14px" }}
-          >
-            <span className="text-sm">Active</span>
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
-            />
-          </label>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            className="btn flex items-center gap-2"
-            type="submit"
-            disabled={loading}
-          >
-            {editingId ? <Save size={14} /> : <Plus size={14} />}
-            {loading
-              ? "Saving..."
-              : editingId
-                ? "Save provider"
-                : "Add provider"}
-          </button>
 
           {msg && <span className="text-sm text-[#8b8fa3]">{msg}</span>}
         </div>
@@ -229,7 +267,7 @@ export default function ProvidersPage() {
       <div className="panel flex flex-col gap-4" style={{ padding: "22px" }}>
         <div className="text-sm font-semibold">Saved providers</div>
 
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2" style={{ marginTop: "12px" }}>
           {providers.length === 0 && (
             <div className="text-sm text-[#8b8fa3]">
               No API providers yet. Add one above to start routing services.
@@ -248,20 +286,48 @@ export default function ProvidersPage() {
                 alignItems: "center",
               }}
             >
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold">{provider.name}</span>
-                  <span
-                    className={`badge ${
-                      provider.is_active ? "badge-ok" : "badge-regular"
-                    }`}
-                  >
-                    {provider.is_active ? "active" : "inactive"}
-                  </span>
-                </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  minWidth: 0,
+                }}
+              >
+                <span
+                  className={`badge ${
+                    provider.is_active ? "badge-ok" : "badge-regular"
+                  }`}
+                  style={{ flexShrink: 0 }}
+                >
+                  {provider.is_active ? "active" : "inactive"}
+                </span>
 
-                <span className="mono text-xs text-[#8b8fa3] break-all">
-                  {provider.api_url}
+                <span
+                  className="text-sm font-semibold"
+                  style={{ flexShrink: 0 }}
+                >
+                  {provider.name}
+                </span>
+
+                <span
+                  className="text-xs text-[#64708f]"
+                  style={{ flexShrink: 0 }}
+                >
+                  -
+                </span>
+
+                <span
+                  className="mono text-xs text-[#8b8fa3]"
+                  style={{
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={maskProviderUrl(provider.api_url)}
+                >
+                  {maskProviderUrl(provider.api_url)}
                 </span>
               </div>
 

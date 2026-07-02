@@ -627,15 +627,14 @@ textarea.input {
 
 .provider-form-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 1fr;
   gap: 14px;
 }
 
 .provider-key-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px;
+  grid-template-columns: 1fr;
   gap: 14px;
-  align-items: end;
 }
 
 @media (max-width: 720px) {
