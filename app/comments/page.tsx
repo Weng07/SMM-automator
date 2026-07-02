@@ -101,13 +101,7 @@ export default function CommentsPage() {
             Platform
           </label>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-              gap: "10px",
-            }}
-          >
+          <div className="platform-grid">
             {PLATFORMS.map((p) => {
               const meta = PLATFORM_META[p];
               const Icon = meta.icon;
@@ -177,13 +171,7 @@ export default function CommentsPage() {
       </form>
 
       <div className="panel flex flex-col gap-4" style={{ padding: "22px" }}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-            gap: "10px",
-          }}
-        >
+        <div className="platform-grid">
           {PLATFORMS.map((p) => {
             const meta = PLATFORM_META[p];
             const Icon = meta.icon;

@@ -168,7 +168,7 @@ export default function OverviewPage() {
 
         <div>
           <label className="field-label">Platform</label>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="platform-grid">
             {PLATFORMS.map((p) => {
               const meta = PLATFORM_META[p];
               const Icon = meta.icon;

@@ -665,3 +665,16 @@ textarea.input {
     grid-template-columns: 1fr;
   }
 }
+
+.platform-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  .platform-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}

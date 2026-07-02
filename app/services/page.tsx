@@ -34,6 +34,7 @@ const DEFAULT_SERVICE_TYPES: Record<string, string[]> = {
   instagram: ["views", "likes", "comments", "shares"],
   tiktok: ["views", "likes", "shares", "comments"],
   linkedin: ["likes", "comments", "shares"],
+  youtube: ["views", "likes", "comments", "subscribers"],
 };
 
 export default function ServicesPage() {
@@ -214,7 +215,7 @@ export default function ServicesPage() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="platform-grid">
         {PLATFORMS.map((p) => {
           const meta = PLATFORM_META[p];
           const Icon = meta.icon;
@@ -279,10 +280,16 @@ export default function ServicesPage() {
                     type="number"
                     min={0}
                     className="input"
-                    value={preset?.quantity ?? 0}
-                    onChange={(e) => savePreset(tier, st, { quantity: Number(e.target.value) })}
+                    defaultValue={preset?.quantity ?? 0}
+                    onBlur={(e) =>
+                      savePreset(tier, st, { quantity: Number(e.target.value) })
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.currentTarget.blur();
+                      }
+                    }}
                   />
-
                   <label className="toggle-label">
                     <input
                       type="checkbox"
