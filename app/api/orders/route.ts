@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { NextRequest, NextResponse, after } from "next/server";
 import { submitBatchOrders, submitOrderForLink } from "@/lib/place-order";
 
 export async function GET(req: NextRequest) {
+  const { supabaseAdmin } = await import("@/lib/supabase");
   const supabase = supabaseAdmin();
   const { searchParams } = new URL(req.url);
   const limit = Number(searchParams.get("limit") ?? "50");
@@ -21,10 +21,14 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { platform, tier, link, links, commentPoolId } = body;
+
     const batchLinks = Array.isArray(links)
       ? links
       : typeof link === "string"
-        ? link.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean)
+        ? link
+            .split(/\r?\n|,/)
+            .map((item) => item.trim())
+            .filter(Boolean)
         : [];
 
     if (!platform || !tier || batchLinks.length === 0) {
@@ -34,24 +38,36 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (batchLinks.length === 1) {
-      const result = await submitOrderForLink({
-        platform,
-        tier,
-        link: batchLinks[0],
-        commentPoolId: commentPoolId ?? null,
-      });
-      return NextResponse.json(result);
-    }
+    after(async () => {
+      try {
+        if (batchLinks.length === 1) {
+          await submitOrderForLink({
+            platform,
+            tier,
+            link: batchLinks[0],
+            commentPoolId: commentPoolId ?? null,
+          });
 
-    const result = await submitBatchOrders({
-      platform,
-      tier,
-      links: batchLinks,
-      commentPoolId: commentPoolId ?? null,
+          return;
+        }
+
+        await submitBatchOrders({
+          platform,
+          tier,
+          links: batchLinks,
+          commentPoolId: commentPoolId ?? null,
+        });
+      } catch (error) {
+        console.error("Background order submission failed:", error);
+      }
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ok: true,
+      queued: true,
+      count: batchLinks.length,
+      message: "Order submitted. Processing in background.",
+    });
   } catch (e: any) {
     return NextResponse.json(
       { error: e?.message ?? "Failed to submit order." },
