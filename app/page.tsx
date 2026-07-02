@@ -33,12 +33,39 @@ type Pool = { id: string; name: string; unused_count: number };
 
 export default function OverviewPage() {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [stats, setStats] = useState({
-    total: 0,
-    submitted: 0,
-    pending: 0,
-    failed: 0,
+  const [stats, setStats] = useState(() => {
+    if (typeof window === "undefined") {
+      return {
+        total: 0,
+        submitted: 0,
+        pending: 0,
+        failed: 0,
+      };
+    }
+
+    const cached = window.localStorage.getItem("panelist_order_stats");
+
+    if (!cached) {
+      return {
+        total: 0,
+        submitted: 0,
+        pending: 0,
+        failed: 0,
+      };
+    }
+
+    try {
+      return JSON.parse(cached);
+    } catch {
+      return {
+        total: 0,
+        submitted: 0,
+        pending: 0,
+        failed: 0,
+      };
+    }
   });
+  const [statsLoading, setStatsLoading] = useState(true);
   const [pools, setPools] = useState<Pool[]>([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -60,16 +87,28 @@ export default function OverviewPage() {
   }
 
   async function loadStats() {
-  const res = await fetch("/api/order-stats");
-  const data = await res.json();
+    setStatsLoading(true);
 
-  setStats({
-    total: data.totalOrders ?? 0,
-    submitted: data.submittedOrders ?? 0,
-    pending: data.pendingOrders ?? 0,
-    failed: data.failedOrders ?? 0,
-  });
-}
+    try {
+      const res = await fetch("/api/order-stats");
+      const data = await res.json();
+
+      const nextStats = {
+        total: data.totalOrders ?? 0,
+        submitted: data.submittedOrders ?? 0,
+        pending: data.pendingOrders ?? 0,
+        failed: data.failedOrders ?? 0,
+      };
+
+      setStats(nextStats);
+      window.localStorage.setItem(
+        "panelist_order_stats",
+        JSON.stringify(nextStats)
+      );
+    } finally {
+      setStatsLoading(false);
+    }
+  }
 
   async function loadPools(forPlatform: string) {
     const res = await fetch(`/api/comments/upload?platform=${forPlatform}`);
@@ -134,28 +173,36 @@ export default function OverviewPage() {
             <ListOrdered size={14} />
             <span className="text-xs">Total orders</span>
           </div>
-          <span className="display text-2xl font-semibold">{stats.total}</span>
+          <span className="display text-2xl font-semibold">
+            {statsLoading ? "..." : stats.total}
+          </span>
         </div>
         <div className="stat-card">
           <div className="flex items-center gap-2 text-[#2ecc71]">
             <CheckCircle2 size={14} />
             <span className="text-xs">Submitted</span>
           </div>
-          <span className="display text-2xl font-semibold">{stats.submitted}</span>
+          <span className="display text-2xl font-semibold">
+            {statsLoading ? "..." : stats.submitted}
+          </span>
         </div>
         <div className="stat-card">
           <div className="flex items-center gap-2 text-[#fbbf24]">
             <Clock size={14} />
             <span className="text-xs">Pending</span>
           </div>
-          <span className="display text-2xl font-semibold">{stats.pending}</span>
+          <span className="display text-2xl font-semibold">
+            {statsLoading ? "..." : stats.pending}
+          </span>
         </div>
         <div className="stat-card">
           <div className="flex items-center gap-2 text-[#ef4444]">
             <XCircle size={14} />
             <span className="text-xs">Failed</span>
           </div>
-          <span className="display text-2xl font-semibold">{stats.failed}</span>
+          <span className="display text-2xl font-semibold">
+            {statsLoading ? "..." : stats.failed}
+          </span>
         </div>
       </div>
 
