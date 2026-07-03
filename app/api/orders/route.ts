@@ -3,14 +3,6 @@ import { submitBatchOrders, submitOrderForLink } from "@/lib/place-order";
 
 type Platform = "x" | "instagram" | "tiktok" | "linkedin" | "youtube";
 
-const PLATFORM_LABELS: Record<Platform, string> = {
-  x: "X",
-  instagram: "Instagram",
-  tiktok: "TikTok",
-  linkedin: "LinkedIn",
-  youtube: "YouTube",
-};
-
 function detectPlatformFromLink(link: string): Platform | null {
   const cleanLink = link.trim().toLowerCase();
 
@@ -88,33 +80,6 @@ function detectPlatformFromLink(link: string): Platform | null {
   }
 }
 
-function validateLinksForPlatform(platform: Platform, links: string[]) {
-  for (const link of links) {
-    const detectedPlatform = detectPlatformFromLink(link);
-
-    if (!detectedPlatform) {
-      return {
-        ok: false,
-        error:
-          "One of the links does not look like a supported social media URL. Please check the link and try again.",
-        link,
-      };
-    }
-
-    if (detectedPlatform !== platform) {
-      return {
-        ok: false,
-        error: `This looks like a ${PLATFORM_LABELS[detectedPlatform]} link, but you selected ${PLATFORM_LABELS[platform]}. Please switch to ${PLATFORM_LABELS[detectedPlatform]} before submitting.`,
-        link,
-        detectedPlatform,
-        selectedPlatform: platform,
-      };
-    }
-  }
-
-  return { ok: true };
-}
-
 export async function GET(req: NextRequest) {
   const { supabaseAdmin } = await import("@/lib/supabase");
   const supabase = supabaseAdmin();
@@ -135,22 +100,27 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { platform, tier, link, links, commentPoolId } = body;
+    const { tier, link, links, commentPoolId } = body;
+
+    const rawLinks =
+      typeof links === "string"
+        ? links
+        : typeof link === "string"
+          ? link
+          : "";
 
     const batchLinks = Array.isArray(links)
       ? links
           .map((item) => String(item).trim())
           .filter(Boolean)
-      : typeof link === "string"
-        ? link
-            .split(/\r?\n|,/)
-            .map((item) => item.trim())
-            .filter(Boolean)
-        : [];
+      : rawLinks
+          .split(/\r?\n|,/)
+          .map((item) => item.trim())
+          .filter(Boolean);
 
-    if (!platform || !tier || batchLinks.length === 0) {
+    if (!tier || batchLinks.length === 0) {
       return NextResponse.json(
-        { error: "platform, tier, and at least one link are required." },
+        { error: "tier and at least one link are required." },
         { status: 400 }
       );
     }
@@ -163,48 +133,49 @@ export async function POST(req: NextRequest) {
       "youtube",
     ];
 
-    if (!allowedPlatforms.includes(platform)) {
+    const detectedLinks = batchLinks.map((item) => {
+      const detectedPlatform = detectPlatformFromLink(item);
+
+      return {
+        link: item,
+        platform: detectedPlatform,
+      };
+    });
+
+    const unsupportedLink = detectedLinks.find((item) => !item.platform);
+
+    if (unsupportedLink) {
       return NextResponse.json(
-        { error: "Unsupported platform selected." },
+        {
+          error:
+            "One of the links does not look like a supported social media URL. Please check the link and try again.",
+          link: unsupportedLink.link,
+        },
         { status: 400 }
       );
     }
 
-    const validation = validateLinksForPlatform(platform, batchLinks);
-
-    if (!validation.ok) {
-      return NextResponse.json(validation, { status: 400 });
-    }
-
     after(async () => {
       try {
-        if (batchLinks.length === 1) {
+        for (const item of detectedLinks) {
+          if (!item.platform) continue;
+
           await submitOrderForLink({
-            platform,
+            platform: item.platform,
             tier,
-            link: batchLinks[0],
+            link: item.link,
             commentPoolId: commentPoolId ?? null,
           });
-
-          return;
         }
-
-        await submitBatchOrders({
-          platform,
-          tier,
-          links: batchLinks,
-          commentPoolId: commentPoolId ?? null,
-        });
       } catch (error) {
         console.error("Background order submission failed:", error);
       }
     });
-
     return NextResponse.json({
       ok: true,
       queued: true,
       count: batchLinks.length,
-      message: "Order submitted. Processing in background.",
+      message: "Links detected and queued for background processing.",
     });
   } catch (e: any) {
     return NextResponse.json(

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { PLATFORM_META, PLATFORMS, PlatformKey } from "@/lib/platform-meta";
+import { PLATFORM_META, PLATFORMS } from "@/lib/platform-meta";
 import {
   CheckCircle2,
   Clock,
@@ -87,14 +87,11 @@ export default function OverviewPage() {
 
     return !window.localStorage.getItem("panelist_order_stats");
   });
-  const [pools, setPools] = useState<Pool[]>([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const [platform, setPlatform] = useState<PlatformKey>("instagram");
   const [tier, setTier] = useState("regular");
   const [links, setLinks] = useState("");
-  const [commentPoolId, setCommentPoolId] = useState("");
 
   const linkList = useMemo(
     () => links.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean),
@@ -155,21 +152,10 @@ export default function OverviewPage() {
     }
   }
 
-  async function loadPools(forPlatform: string) {
-    const res = await fetch(`/api/comments/upload?platform=${forPlatform}`);
-    const data = await res.json();
-    setPools(data.pools ?? []);
-  }
-
   useEffect(() => {
     loadOrders();
     loadStats();
   }, []);
-
-  useEffect(() => {
-    loadPools(platform);
-    setCommentPoolId("");
-  }, [platform]);
 
   async function submitOrder(e: React.FormEvent) {
     e.preventDefault();
@@ -180,7 +166,10 @@ export default function OverviewPage() {
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, tier, links: linkList, commentPoolId: commentPoolId || null }),
+        body: JSON.stringify({
+          tier,
+          links,
+        }),
       });
 
       const data = await res.json();
@@ -271,26 +260,34 @@ export default function OverviewPage() {
             </span>
           </div>
 
-        <div>
-          <label className="field-label">Platform</label>
-          <div className="platform-grid">
-            {PLATFORMS.map((p) => {
-              const meta = PLATFORM_META[p];
-              const Icon = meta.icon;
-              return (
-                <button
-                  type="button"
-                  key={p}
-                  onClick={() => setPlatform(p)}
-                  className={`platform-pill ${platform === p ? "active" : ""}`}
-                >
-                  <Icon size={15} style={{ color: meta.color }} />
-                  {meta.label}
-                </button>
-              );
-            })}
+          <div>
+            <label className="field-label">Supported platforms</label>
+
+            <p className="text-xs text-[#8b8fa3]" style={{ marginBottom: "10px" }}>
+              Paste mixed links together. The system will detect each platform automatically.
+            </p>
+
+            <div className="platform-grid">
+              {PLATFORMS.map((p) => {
+                const meta = PLATFORM_META[p];
+                const Icon = meta.icon;
+
+                return (
+                  <div
+                    key={p}
+                    className="platform-pill"
+                    style={{
+                      cursor: "default",
+                      opacity: 0.95,
+                    }}
+                  >
+                    <Icon size={15} style={{ color: meta.color }} />
+                    {meta.label}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -300,25 +297,6 @@ export default function OverviewPage() {
               <option value="regular">regular</option>
             </select>
           </div>
-          {tier === "priority" && (
-            <div>
-              <label className="field-label">
-                Comment pool <span className="text-[#565a6e]">(required only when comments are enabled)</span>
-              </label>
-              <select
-                className="input"
-                value={commentPoolId}
-                onChange={(e) => setCommentPoolId(e.target.value)}
-              >
-                <option value="">No pool selected</option>
-                {pools.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.unused_count} left)
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
 
         <div>

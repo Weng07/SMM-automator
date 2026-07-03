@@ -44,6 +44,35 @@ async function popComments(poolId: string, count: number): Promise<string[]> {
   return data.map((d) => d.comment);
 }
 
+async function findOldestAvailablePool(platform: Platform) {
+  const supabase = supabaseAdmin();
+
+  const { data: pools, error } = await supabase
+    .from("comment_pools")
+    .select("id, name, created_at")
+    .eq("platform", platform)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  if (!pools || pools.length === 0) return null;
+
+  for (const pool of pools) {
+    const { count, error: countError } = await supabase
+      .from("comment_pool_items")
+      .select("id", { count: "exact", head: true })
+      .eq("pool_id", pool.id)
+      .eq("used", false);
+
+    if (countError) throw countError;
+
+    if ((count ?? 0) > 0) {
+      return pool;
+    }
+  }
+
+  return null;
+}
+
 export async function submitOrderForLink(params: {
   platform: Platform;
   tier: Tier;
@@ -157,9 +186,14 @@ export async function submitOrderForLink(params: {
 
     try {
       let comments: string | undefined;
+      
+    if (preset.service_type === "comments") {
+      let poolId = params.commentPoolId ?? null;
 
-      if (preset.service_type === "comments") {
-        if (!params.commentPoolId) {
+      if (!poolId) {
+        const autoPool = await findOldestAvailablePool(params.platform);
+
+        if (!autoPool) {
           results.push({
             service_type: preset.service_type,
             api_provider_id: providerId,
@@ -167,12 +201,15 @@ export async function submitOrderForLink(params: {
             panel_service_id: serviceId,
             socpanel_service_id: serviceId,
             quantity: preset.quantity,
-            error: "Custom comments service requires a comment pool.",
+            error: `No unused comment pool found for ${params.platform}.`,
           });
           continue;
         }
 
-        const picked = await popComments(params.commentPoolId, preset.quantity);
+        poolId = autoPool.id;
+      }
+
+        const picked = await popComments(poolId as string, preset.quantity);
 
         if (picked.length < preset.quantity) {
           results.push({
