@@ -1,5 +1,5 @@
 import { after, NextRequest, NextResponse } from "next/server";
-import { submitBatchOrders, submitOrderForLink } from "@/lib/place-order";
+import { submitOrderForLink } from "@/lib/place-order";
 
 type Platform = "x" | "instagram" | "tiktok" | "linkedin" | "youtube";
 
@@ -124,14 +124,6 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-
-    const allowedPlatforms: Platform[] = [
-      "x",
-      "instagram",
-      "tiktok",
-      "linkedin",
-      "youtube",
-    ];
 
     const detectedLinks = batchLinks.map((item) => {
       const detectedPlatform = detectPlatformFromLink(item);

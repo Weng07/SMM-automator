@@ -73,6 +73,49 @@ async function findOldestAvailablePool(platform: Platform) {
   return null;
 }
 
+async function wasServiceAlreadySubmitted(params: {
+  platform: Platform;
+  tier: Tier;
+  link: string;
+  serviceType: string;
+}) {
+  const supabase = supabaseAdmin();
+
+  const { data, error } = await supabase
+    .from("orders")
+    .select("id, services_ordered")
+    .eq("platform", params.platform)
+    .eq("tier", params.tier)
+    .eq("link", params.link)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  if (!data || data.length === 0) {
+    return false;
+  }
+
+  for (const order of data) {
+    const services = Array.isArray(order.services_ordered)
+      ? order.services_ordered
+      : [];
+
+    const matchingService = services.find(
+      (service: any) =>
+        service.service_type === params.serviceType &&
+        !service.error &&
+        !service.skipped &&
+        (service.panel_order_id || service.socpanel_order_id)
+    );
+
+    if (matchingService) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export async function submitOrderForLink(params: {
   platform: Platform;
   tier: Tier;
@@ -170,6 +213,28 @@ export async function submitOrderForLink(params: {
     const providerId = preset.api_provider_id ?? null;
     const providerName =
       preset.api_providers?.name ?? (providerId ? "Provider" : "Default provider");
+
+    const alreadySubmitted = await wasServiceAlreadySubmitted({
+      platform: params.platform,
+      tier: params.tier,
+      link: params.link,
+      serviceType: preset.service_type,
+    });
+
+    if (alreadySubmitted) {
+      results.push({
+        service_type: preset.service_type,
+        api_provider_id: providerId,
+        provider_name: providerName,
+        panel_service_id: serviceId,
+        socpanel_service_id: serviceId,
+        quantity: 0,
+        skipped: true,
+        error: "Duplicate service skipped because it was already submitted successfully for this link.",
+      });
+
+      continue;
+    }
 
     if (!serviceId) {
       results.push({
