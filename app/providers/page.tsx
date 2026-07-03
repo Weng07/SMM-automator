@@ -50,6 +50,9 @@ export default function ProvidersPage() {
   const [apiKey, setApiKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [balances, setBalances] = useState<Record<string, any>>({});
+  const [totalsByCurrency, setTotalsByCurrency] = useState<Record<string, number>>({});
+  const [balancesLoading, setBalancesLoading] = useState(false);
 
   async function loadProviders() {
     const res = await fetch("/api/providers");
@@ -57,8 +60,23 @@ export default function ProvidersPage() {
     setProviders(data.providers ?? []);
   }
 
+  async function loadBalances() {
+    setBalancesLoading(true);
+    try {
+      const res = await fetch("/api/providers/balances");
+      const data = await res.json();
+      setBalances(data.balances ?? {});
+      setTotalsByCurrency(data.totalsByCurrency ?? {});
+    } catch (e: any) {
+      setMsg(`Error: ${e.message}`);
+    } finally {
+      setBalancesLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadProviders();
+    loadBalances();
   }, []);
 
   function resetForm() {
@@ -108,6 +126,7 @@ export default function ProvidersPage() {
       setMsg(editingId ? "Provider updated." : "Provider added.");
       resetForm();
       await loadProviders();
+      await loadBalances();
     } catch (e: any) {
       setMsg(`Error: ${e.message}`);
     } finally {
@@ -267,6 +286,41 @@ export default function ProvidersPage() {
       <div className="panel flex flex-col gap-4" style={{ padding: "22px" }}>
         <div className="text-sm font-semibold">Saved providers</div>
 
+        <div
+          className="panel-alt"
+          style={{
+            padding: "14px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+            flexWrap: "wrap",
+          }}
+        >
+          <div className="flex flex-col gap-1">
+            <span className="text-xs text-[#8b8fa3]">Total provider balance</span>
+
+            <span className="display text-xl font-semibold">
+              {balancesLoading
+                ? "Checking..."
+                : Object.keys(totalsByCurrency).length === 0
+                  ? "$0.00"
+                  : Object.entries(totalsByCurrency)
+                      .map(([currency, amount]) => `${currency} ${amount.toFixed(2)}`)
+                      .join(" + ")}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={loadBalances}
+            disabled={balancesLoading}
+          >
+            {balancesLoading ? "Checking..." : "Refresh balance"}
+          </button>
+        </div>
+
         <div className="flex flex-col gap-2" style={{ marginTop: "12px" }}>
           {providers.length === 0 && (
             <div className="text-sm text-[#8b8fa3]">
@@ -328,6 +382,31 @@ export default function ProvidersPage() {
                   title={maskProviderUrl(provider.api_url)}
                 >
                   {maskProviderUrl(provider.api_url)}
+                </span>
+
+                <span
+                  className="text-xs text-[#8b8fa3]"
+                  style={{ flexShrink: 0 }}
+                >
+                  -
+                </span>
+
+                <span
+                  className="text-xs"
+                  style={{
+                    flexShrink: 0,
+                    color: balances[provider.id]?.error ? "#ef4444" : "#2ecc71",
+                  }}
+                >
+                  {balancesLoading
+                    ? "Balance checking..."
+                    : balances[provider.id]?.error
+                      ? "Balance error"
+                      : balances[provider.id]
+                        ? `${balances[provider.id].currency} ${Number(
+                            balances[provider.id].balance ?? 0
+                          ).toFixed(2)}`
+                        : "Balance not checked"}
                 </span>
               </div>
 

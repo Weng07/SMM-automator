@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const links = [
   { href: "/", label: "New Order" },
@@ -13,6 +13,42 @@ const links = [
 
 export default function Header() {
   const [open, setOpen] = useState(false);
+  const [totalBalance, setTotalBalance] = useState("Checking...");
+  const [selectedCurrency, setSelectedCurrency] = useState("USD");
+  const [selectedCurrencySymbol, setSelectedCurrencySymbol] = useState("$");
+  const [availableCurrencies, setAvailableCurrencies] = useState([
+    { code: "USD", symbol: "$", label: "US Dollar" },
+  ]);
+
+  async function loadHeaderBalance(currency = selectedCurrency) {
+    try {
+      const res = await fetch(`/api/providers/balances?currency=${currency}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        setTotalBalance("Balance error");
+        return;
+      }
+
+      setSelectedCurrency(data.selectedCurrency ?? currency);
+      setSelectedCurrencySymbol(data.selectedCurrencySymbol ?? "$");
+      setAvailableCurrencies(
+        data.availableCurrencies ?? [
+          { code: "USD", symbol: "$", label: "US Dollar" },
+        ]
+      );
+
+      const amount = Number(data.convertedTotal ?? 0);
+
+      setTotalBalance(amount.toFixed(2));
+    } catch {
+      setTotalBalance("Balance error");
+    }
+  }
+
+  useEffect(() => {
+    loadHeaderBalance();
+  }, []);
 
   return (
     <header className="app-header">
@@ -23,6 +59,27 @@ export default function Header() {
         </Link>
 
         <nav className="app-nav">
+          <div className="app-balance-wrap" title="Total provider balance">
+            <select
+              className="app-balance-currency"
+              value={selectedCurrency}
+              onChange={(e) => {
+                const nextCurrency = e.target.value;
+                setSelectedCurrency(nextCurrency);
+                loadHeaderBalance(nextCurrency);
+              }}
+            >
+              {availableCurrencies.map((currency) => (
+                <option key={currency.code} value={currency.code}>
+                  {currency.symbol}
+                </option>
+              ))}
+            </select>
+
+            <span className="app-balance-value">
+              {selectedCurrency} {totalBalance}
+            </span>
+          </div>
           {links.map((link) => (
             <Link key={link.href} href={link.href}>
               {link.label}

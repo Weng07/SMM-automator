@@ -411,6 +411,60 @@ textarea.input {
   color: var(--text);
 }
 
+.app-balance-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(34, 211, 238, 0.18);
+  background: rgba(34, 211, 238, 0.08);
+  color: #c8f7ff;
+  border-radius: 999px;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
+.app-balance-currency {
+  appearance: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #c8f7ff;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  padding-right: 2px;
+}
+
+.app-balance-currency option {
+  background: #070b18;
+  color: #f8fafc;
+}
+
+.app-balance-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+@media (max-width: 720px) {
+  .app-balance-wrap {
+    margin-left: auto;
+    gap: 6px;
+    padding: 6px 8px;
+    max-width: 150px;
+  }
+
+  .app-balance-currency {
+    font-size: 11px;
+  }
+
+  .app-balance-value {
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 .balance-chip,
 .hamburger-btn {
   align-items: center;
