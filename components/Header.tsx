@@ -58,28 +58,29 @@ export default function Header() {
           <span>Panelist</span>
         </Link>
 
-        <nav className="app-nav">
-          <div className="app-balance-wrap" title="Total provider balance">
-            <select
-              className="app-balance-currency"
-              value={selectedCurrency}
-              onChange={(e) => {
-                const nextCurrency = e.target.value;
-                setSelectedCurrency(nextCurrency);
-                loadHeaderBalance(nextCurrency);
-              }}
-            >
-              {availableCurrencies.map((currency) => (
-                <option key={currency.code} value={currency.code}>
-                  {currency.symbol}
-                </option>
-              ))}
-            </select>
+        <div className="app-balance-wrap" title="Total provider balance">
+          <select
+            className="app-balance-currency"
+            value={selectedCurrency}
+            onChange={(e) => {
+              const nextCurrency = e.target.value;
+              setSelectedCurrency(nextCurrency);
+              loadHeaderBalance(nextCurrency);
+            }}
+          >
+            {availableCurrencies.map((currency) => (
+              <option key={currency.code} value={currency.code}>
+                {currency.symbol}
+              </option>
+            ))}
+          </select>
 
-            <span className="app-balance-value">
-              {selectedCurrency} {totalBalance}
-            </span>
-          </div>
+          <span className="app-balance-value">
+            {selectedCurrency} {totalBalance}
+          </span>
+        </div>
+
+        <nav className="app-nav">
           {links.map((link) => (
             <Link key={link.href} href={link.href}>
               {link.label}

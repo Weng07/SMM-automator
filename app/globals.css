@@ -413,7 +413,7 @@ textarea.input {
 
 .app-balance-wrap {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   border: 1px solid rgba(34, 211, 238, 0.18);
   background: rgba(34, 211, 238, 0.08);
@@ -444,25 +444,6 @@ textarea.input {
   font-size: 12px;
   font-weight: 700;
   color: #f8fafc;
-}
-
-@media (max-width: 720px) {
-  .app-balance-wrap {
-    margin-left: auto;
-    gap: 6px;
-    padding: 6px 8px;
-    max-width: 150px;
-  }
-
-  .app-balance-currency {
-    font-size: 11px;
-  }
-
-  .app-balance-value {
-    font-size: 11px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
 }
 
 .balance-chip,
@@ -729,5 +710,25 @@ textarea.input {
 @media (max-width: 720px) {
   .platform-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-balance-wrap {
+    margin-left: auto;
+    margin-right: -10px;
+    gap: 6px;
+    padding: 6px 8px;
+    max-width: 150px;
+  }
+
+  .app-balance-currency {
+    font-size: 11px;
+  }
+
+  .app-balance-value {
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
