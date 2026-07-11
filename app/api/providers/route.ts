@@ -6,8 +6,8 @@ export async function GET() {
   try {
     const providers = await fetchProviders();
     return NextResponse.json({ providers });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Failed to load API providers." }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to load API providers." }, { status: 500 });
   }
 }
 
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = supabaseAdmin();
-    const payload: any = {
+    const payload: Record<string, unknown> = {
       name,
       api_url,
       is_active: is_active ?? true,
@@ -38,8 +38,8 @@ export async function POST(req: NextRequest) {
 
     if (error) throw error;
     return NextResponse.json({ provider: data });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Failed to save API provider." }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to save API provider." }, { status: 500 });
   }
 }
 
@@ -54,7 +54,7 @@ export async function DELETE(req: NextRequest) {
     if (error) throw error;
 
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Failed to delete API provider." }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to delete API provider." }, { status: 500 });
   }
 }

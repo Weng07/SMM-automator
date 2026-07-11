@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useState } from "react";
 
 const links = [
   { href: "/", label: "New Order" },
@@ -15,12 +16,12 @@ export default function Header() {
   const [open, setOpen] = useState(false);
   const [totalBalance, setTotalBalance] = useState("Checking...");
   const [selectedCurrency, setSelectedCurrency] = useState("USD");
-  const [selectedCurrencySymbol, setSelectedCurrencySymbol] = useState("$");
+  const [, setSelectedCurrencySymbol] = useState("$");
   const [availableCurrencies, setAvailableCurrencies] = useState([
     { code: "USD", symbol: "$", label: "US Dollar" },
   ]);
 
-  async function loadHeaderBalance(currency = selectedCurrency) {
+  const loadHeaderBalance = useCallback(async (currency = selectedCurrency) => {
     try {
       const res = await fetch(`/api/providers/balances?currency=${currency}`);
       const data = await res.json();
@@ -44,17 +45,18 @@ export default function Header() {
     } catch {
       setTotalBalance("Balance error");
     }
-  }
+  }, [selectedCurrency]);
 
   useEffect(() => {
-    loadHeaderBalance();
-  }, []);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadHeaderBalance();
+  }, [loadHeaderBalance]);
 
   return (
     <header className="app-header">
       <div className="app-header-inner">
         <Link href="/" className="app-brand">
-          <img src="/logo.svg" alt="Panelist" className="app-logo" />
+          <Image src="/logo.svg" alt="Panelist" width={32} height={32} className="app-logo" />
           <span>Panelist</span>
         </Link>
 

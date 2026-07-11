@@ -47,9 +47,9 @@ export async function GET(req: NextRequest) {
       selectedCurrencySymbol: selectedCurrencyMeta.symbol,
       availableCurrencies: DISPLAY_CURRENCIES,
     });
-  } catch (e: any) {
+  } catch (error) {
     return NextResponse.json(
-      { error: e?.message ?? "Failed to fetch provider balances." },
+      { error: error instanceof Error ? error.message : "Failed to fetch provider balances." },
       { status: 500 }
     );
   }

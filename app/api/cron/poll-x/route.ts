@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const summary: any[] = [];
+  const summary: Array<Record<string, unknown>> = [];
 
   for (const account of accounts ?? []) {
     try {
@@ -57,8 +57,8 @@ export async function GET(req: NextRequest) {
         .eq("id", account.id);
 
       summary.push({ handle: account.handle, newPosts: newPosts.length });
-    } catch (e: any) {
-      summary.push({ handle: account.handle, error: e?.message ?? "Unknown error" });
+    } catch (error) {
+      summary.push({ handle: account.handle, error: error instanceof Error ? error.message : "Unknown error" });
     }
   }
 

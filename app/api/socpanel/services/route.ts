@@ -5,9 +5,9 @@ export async function GET() {
   try {
     const services = await fetchServices();
     return NextResponse.json({ services });
-  } catch (e: any) {
+  } catch (error) {
     return NextResponse.json(
-      { error: e?.message ?? "Failed to fetch services." },
+      { error: error instanceof Error ? error.message : "Failed to fetch services." },
       { status: 500 }
     );
   }

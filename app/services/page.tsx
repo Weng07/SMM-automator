@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PLATFORM_META, PLATFORMS, PlatformKey } from "@/lib/platform-meta";
 import { RefreshCw, Search, ServerCog } from "lucide-react";
 
@@ -75,7 +75,7 @@ export default function ServicesPage() {
   const [error, setError] = useState<string | null>(null);
   const [editingRows, setEditingRows] = useState<Record<string, DraftPreset>>({});
 
-  async function loadProviders() {
+  const loadProviders = useCallback(async () => {
     const res = await fetch("/api/providers");
     const data = await res.json();
 
@@ -84,13 +84,13 @@ export default function ServicesPage() {
     if (!providerId && data.providers?.[0]?.id) {
       setProviderId(data.providers[0].id);
     }
-  }
+  }, [providerId]);
 
-  async function loadPresets() {
+  const loadPresets = useCallback(async () => {
     const res = await fetch("/api/service-presets");
     const data = await res.json();
     setPresets(data.presets ?? []);
-  }
+  }, []);
 
   async function loadPanelServices() {
     if (!providerId) {
@@ -110,21 +110,18 @@ export default function ServicesPage() {
       }
 
       setPanelServices(data.services ?? []);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Unexpected error.");
     } finally {
       setLoadingServices(false);
     }
   }
 
   useEffect(() => {
-    loadProviders();
-    loadPresets();
-  }, []);
-
-  useEffect(() => {
-    setEditingRows({});
-  }, [platform]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadProviders();
+    void loadPresets();
+  }, [loadPresets, loadProviders]);
 
   function getPreset(tier: string, serviceType: string): Preset | undefined {
     return presets.find(
@@ -344,6 +341,7 @@ export default function ServicesPage() {
               key={p}
               onClick={() => {
                 setPlatform(p);
+                setEditingRows({});
                 setSearch("");
               }}
               className={`platform-pill ${p === platform ? "active" : ""}`}

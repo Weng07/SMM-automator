@@ -1,5 +1,5 @@
 import { after, NextRequest, NextResponse } from "next/server";
-import { submitOrderForLink } from "@/lib/place-order";
+import { retryOrderForId, submitOrderForLink } from "@/lib/place-order";
 
 type Platform = "x" | "instagram" | "tiktok" | "linkedin" | "youtube";
 
@@ -100,7 +100,19 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { tier, link, links, commentPoolId } = body;
+    const { action, orderId, tier, link, links, commentPoolId } = body;
+
+    if (action === "retry") {
+      if (typeof orderId !== "string" || !orderId.trim()) {
+        return NextResponse.json(
+          { error: "orderId is required for retry requests." },
+          { status: 400 }
+        );
+      }
+
+      const result = await retryOrderForId(orderId);
+      return NextResponse.json({ ok: true, retry: true, orderId: result.orderId });
+    }
 
     const rawLinks =
       typeof links === "string"
@@ -169,9 +181,9 @@ export async function POST(req: NextRequest) {
       count: batchLinks.length,
       message: "Links detected and queued for background processing.",
     });
-  } catch (e: any) {
+  } catch (error) {
     return NextResponse.json(
-      { error: e?.message ?? "Failed to submit order." },
+      { error: error instanceof Error ? error.message : "Failed to submit order." },
       { status: 500 }
     );
   }

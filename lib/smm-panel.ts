@@ -25,7 +25,97 @@ export type PanelService = {
 export type PanelOrderResult = {
   order?: string | number;
   error?: string;
+  status?: string;
 };
+
+function normalizePanelOrderResponse(payload: unknown): PanelOrderResult {
+  if (typeof payload === "string") {
+    const trimmed = payload.trim();
+    if (!trimmed) {
+      return { error: "Provider API returned an empty response." };
+    }
+
+    return { error: trimmed };
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return { error: "Unexpected response from provider API." };
+  }
+
+  const response = payload as Record<string, unknown>;
+  const nested = response.data && typeof response.data === "object"
+    ? (response.data as Record<string, unknown>)
+    : undefined;
+  const candidate = nested ?? response;
+
+  const status =
+    typeof candidate.status === "string"
+      ? candidate.status
+      : typeof candidate.state === "string"
+        ? candidate.state
+        : undefined;
+  const normalizedStatus = status?.trim().toLowerCase();
+  const order =
+    candidate.order ??
+    candidate.id ??
+    candidate.order_id ??
+    candidate.orderId ??
+    candidate.orderNumber;
+
+  const error =
+    typeof candidate.error === "string"
+      ? candidate.error
+      : typeof candidate.message === "string"
+        ? candidate.message
+        : typeof candidate.err === "string"
+          ? candidate.err
+          : typeof candidate.detail === "string"
+            ? candidate.detail
+            : typeof candidate.reason === "string"
+              ? candidate.reason
+              : undefined;
+
+  const canceledStatuses = new Set([
+    "canceled",
+    "cancelled",
+    "cancel",
+    "cancellation",
+    "failed",
+    "error",
+    "declined",
+    "rejected",
+    "denied",
+  ]);
+
+  if (error?.trim()) {
+    return {
+      order: order as string | number | undefined,
+      error: error.trim(),
+      status: normalizedStatus,
+    };
+  }
+
+  if (normalizedStatus && canceledStatuses.has(normalizedStatus)) {
+    return {
+      order: order as string | number | undefined,
+      error: `Provider marked the order as ${status}.`,
+      status: normalizedStatus,
+    };
+  }
+
+  if (normalizedStatus && ["success", "successful", "completed", "complete", "pending", "processing", "queued", "accepted", "submitted"].includes(normalizedStatus)) {
+    return {
+      order: order as string | number | undefined,
+      status: normalizedStatus,
+    };
+  }
+
+  if (order !== undefined && order !== null && order !== "") {
+    return { order: order as string | number, status: normalizedStatus };
+  }
+
+  return { error: "Unexpected response from provider API.", status: normalizedStatus };
+}
 
 async function getProvider(providerId?: string | null) {
   const supabase = supabaseAdmin();
@@ -145,7 +235,8 @@ export async function placePanelOrder(params: {
 
   if (params.comments) body.comments = params.comments;
 
-  return callPanelApi(body, params.providerId);
+  const response = await callPanelApi(body, params.providerId);
+  return normalizePanelOrderResponse(response);
 }
 
 export async function fetchOrderStatus(orderId: string, providerId?: string | null) {

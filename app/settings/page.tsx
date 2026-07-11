@@ -3,6 +3,14 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, PlugZap, Trash2 } from "lucide-react";
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return typeof error === "string" ? error : "Unexpected error.";
+}
+
 type Provider = { id: string; name: string; api_url: string; is_active: boolean };
 
 const DEFAULT_API_URL = "https://socpanel.com/api/v2";
@@ -22,7 +30,8 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    loadProviders();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadProviders();
   }, []);
 
   async function saveProvider(e: React.FormEvent) {
@@ -45,8 +54,8 @@ export default function SettingsPage() {
       setApiUrl(DEFAULT_API_URL);
       setApiKey("");
       loadProviders();
-    } catch (e: any) {
-      setMsg(`Error: ${e.message}`);
+    } catch (error) {
+      setMsg(`Error: ${getErrorMessage(error)}`);
     } finally {
       setSaving(false);
     }
@@ -54,7 +63,9 @@ export default function SettingsPage() {
 
   async function deleteProvider(id: string) {
     const res = await fetch(`/api/providers?id=${id}`, { method: "DELETE" });
-    if (res.ok) loadProviders();
+    if (res.ok) {
+      await loadProviders();
+    }
   }
 
   return (

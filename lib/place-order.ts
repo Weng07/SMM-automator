@@ -15,6 +15,7 @@ type ServiceResult = {
   socpanel_order_id?: string | number;
   skipped?: boolean;
   error?: string;
+  status?: string;
 };
 
 function isInstagramReel(link: string) {
@@ -100,13 +101,21 @@ async function wasServiceAlreadySubmitted(params: {
       ? order.services_ordered
       : [];
 
-    const matchingService = services.find(
-      (service: any) =>
+    const matchingService = services.find((service: Record<string, unknown>) => {
+      const hasSuccessfulId = service.panel_order_id || service.socpanel_order_id;
+      const errorMessage = typeof service.error === "string" ? service.error : "";
+      const isCanceled = Boolean(
+        errorMessage &&
+          /canceled|cancelled|cancel|failed|error|declined|rejected|denied/i.test(errorMessage)
+      );
+
+      return (
         service.service_type === params.serviceType &&
-        !service.error &&
         !service.skipped &&
-        (service.panel_order_id || service.socpanel_order_id)
-    );
+        hasSuccessfulId &&
+        !isCanceled
+      );
+    });
 
     if (matchingService) {
       return true;
@@ -114,6 +123,28 @@ async function wasServiceAlreadySubmitted(params: {
   }
 
   return false;
+}
+
+export async function retryOrderForId(orderId: string) {
+  const supabase = supabaseAdmin();
+
+  const { data: orderRow, error: orderErr } = await supabase
+    .from("orders")
+    .select("id, platform, tier, link, comment_pool_id, source")
+    .eq("id", orderId)
+    .single();
+
+  if (orderErr || !orderRow) {
+    throw new Error("Order not found.");
+  }
+
+  return submitOrderForLink({
+    platform: orderRow.platform as Platform,
+    tier: orderRow.tier as Tier,
+    link: orderRow.link,
+    source: orderRow.source ?? "retry",
+    commentPoolId: orderRow.comment_pool_id ?? null,
+  });
 }
 
 export async function submitOrderForLink(params: {
@@ -309,6 +340,7 @@ export async function submitOrderForLink(params: {
           socpanel_service_id: serviceId,
           quantity: preset.quantity,
           error: res.error,
+          status: res.status,
         });
       } else {
         results.push({
@@ -320,9 +352,10 @@ export async function submitOrderForLink(params: {
           quantity: preset.quantity,
           panel_order_id: res.order,
           socpanel_order_id: res.order,
+          status: res.status,
         });
       }
-    } catch (e: any) {
+    } catch (error) {
       results.push({
         service_type: preset.service_type,
         api_provider_id: providerId,
@@ -330,21 +363,20 @@ export async function submitOrderForLink(params: {
         panel_service_id: serviceId,
         socpanel_service_id: serviceId,
         quantity: preset.quantity,
-        error: e?.message ?? "Unknown error placing order.",
+        error: error instanceof Error ? error.message : "Unknown error placing order.",
       });
     }
   }
 
   const realResults = results.filter((result) => !result.skipped);
   const hasError = realResults.some((result) => result.error);
-  const allFailed =
-    realResults.length > 0 && realResults.every((result) => result.error);
+  const nextStatus = hasError ? "failed" : "submitted";
 
   await supabase
     .from("orders")
     .update({
       services_ordered: results,
-      status: allFailed ? "failed" : "submitted",
+      status: nextStatus,
     })
     .eq("id", orderRow.id);
 
@@ -366,7 +398,7 @@ export async function submitBatchOrders(params: {
     throw new Error("Add at least one post link.");
   }
 
-  const orders = [];
+  const orders: Array<{ link: string; error?: string; hasError?: boolean; [key: string]: unknown }> = [];
 
   for (const link of cleanLinks) {
     try {
@@ -379,10 +411,10 @@ export async function submitBatchOrders(params: {
           commentPoolId: params.commentPoolId ?? null,
         })
       );
-    } catch (e: any) {
+    } catch (error) {
       orders.push({
         link,
-        error: e?.message ?? "Failed to submit this link.",
+        error: error instanceof Error ? error.message : "Failed to submit this link.",
         hasError: true,
       });
     }
@@ -390,9 +422,9 @@ export async function submitBatchOrders(params: {
 
   return {
     count: orders.length,
-    submitted: orders.filter((order: any) => !order.error).length,
-    failed: orders.filter((order: any) => order.error).length,
-    hasError: orders.some((order: any) => order.hasError || order.error),
+    submitted: orders.filter((order: { error?: string }) => !order.error).length,
+    failed: orders.filter((order: { error?: string }) => order.error).length,
+    hasError: orders.some((order: { hasError?: boolean; error?: string }) => order.hasError || order.error),
     orders,
   };
 }

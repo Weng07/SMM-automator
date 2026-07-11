@@ -24,6 +24,7 @@ type Order = {
     provider_name?: string;
     panel_service_id?: string;
     error?: string;
+    skipped?: boolean;
   }[];
   created_at: string;
 };
@@ -77,6 +78,8 @@ export default function OrdersPage() {
     return !window.localStorage.getItem("panelist_orders_page_orders");
   });
   const [loading, setLoading] = useState(false);
+  const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
 
   async function loadOrders() {
@@ -122,9 +125,36 @@ export default function OrdersPage() {
   }
 
   useEffect(() => {
-    loadOrders();
-    loadStats();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadOrders();
+    void loadStats();
   }, []);
+
+  async function retryOrder(orderId: string) {
+    setRetryingOrderId(orderId);
+    setFeedback(null);
+
+    try {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retry", orderId }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Retry failed.");
+      }
+
+      setFeedback("Retry queued successfully.");
+      await loadOrders();
+      await loadStats();
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Retry failed.");
+    } finally {
+      setRetryingOrderId(null);
+    }
+  }
 
   const visibleOrders = orders.filter((order) => {
     if (statusFilter === "all") return true;
@@ -198,7 +228,17 @@ export default function OrdersPage() {
           <button
             type="button"
             className="btn-secondary flex items-center gap-2"
-            onClick={loadOrders}
+            onClick={() => {
+              void (async () => {
+                setLoading(true);
+                try {
+                  await loadOrders();
+                  await loadStats();
+                } finally {
+                  setLoading(false);
+                }
+              })();
+            }}
             disabled={loading}
           >
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
@@ -224,6 +264,12 @@ export default function OrdersPage() {
             </button>
           ))}
         </div>
+
+        {feedback && (
+          <div className="rounded border border-white/10 bg-white/5 px-3 py-2 text-sm text-[#f5f6fa]">
+            {feedback}
+          </div>
+        )}
 
         <div className="flex flex-col gap-2">
           {visibleOrders.length === 0 && (
@@ -282,19 +328,35 @@ export default function OrdersPage() {
                   <ExternalLink size={12} className="shrink-0 text-[#64708f]" />
                 </a>
 
-                <div className="flex flex-wrap gap-2">
-                  {order.services_ordered.map((service, index) => (
-                    <span
-                      key={index}
-                      className={`badge ${service.error ? "badge-err" : "badge-ok"}`}
-                      title={service.error}
-                    >
-                      {service.error && <AlertTriangle size={11} />}
-                      {service.service_type}: {service.quantity}
-                      {service.provider_name ? ` · ${service.provider_name}` : ""}
-                    </span>
-                  ))}
+                <div className="flex flex-wrap items-center gap-2">
+                  {order.services_ordered.map((service, index) => {
+                    const isFailure = Boolean(service.error && !service.skipped);
+                    const isSkipped = Boolean(service.skipped);
+
+                    return (
+                      <span
+                        key={index}
+                        className={`badge ${isFailure ? "badge-err" : isSkipped ? "badge-warn" : "badge-ok"}`}
+                        title={service.error}
+                      >
+                        {service.error && <AlertTriangle size={11} />}
+                        {service.service_type}: {service.quantity}
+                        {service.provider_name ? ` · ${service.provider_name}` : ""}
+                      </span>
+                    );
+                  })}
                 </div>
+
+                {order.services_ordered.some((service) => service.error && !service.skipped) && (
+                  <button
+                    type="button"
+                    className="btn-secondary self-start"
+                    onClick={() => retryOrder(order.id)}
+                    disabled={retryingOrderId === order.id}
+                  >
+                    {retryingOrderId === order.id ? "Retrying..." : "Retry failed"}
+                  </button>
+                )}
               </div>
             );
           })}

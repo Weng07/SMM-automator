@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 type Pool = { id: string; name: string; unused_count: number };
+
 type Account = {
   id: string;
   handle: string;
@@ -30,7 +31,8 @@ export default function AccountsPage() {
   }
 
   useEffect(() => {
-    load();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, []);
 
   async function addAccount(e: React.FormEvent) {

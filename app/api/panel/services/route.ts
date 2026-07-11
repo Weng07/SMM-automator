@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
     const providerId = searchParams.get("providerId");
     const services = await fetchServices(providerId);
     return NextResponse.json({ services });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Failed to fetch services." }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to fetch services." }, { status: 500 });
   }
 }

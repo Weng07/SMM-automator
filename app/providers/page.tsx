@@ -11,6 +11,16 @@ type Provider = {
   created_at?: string;
 };
 
+type ProviderBalanceMap = Record<string, { balance?: number | string; currency?: string; error?: string }>;
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return typeof error === "string" ? error : "Unexpected error.";
+}
+
 function maskSecret(value: string) {
   if (!value) return "";
 
@@ -50,7 +60,7 @@ export default function ProvidersPage() {
   const [apiKey, setApiKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [balances, setBalances] = useState<Record<string, any>>({});
+  const [balances, setBalances] = useState<ProviderBalanceMap>({});
   const [totalsByCurrency, setTotalsByCurrency] = useState<Record<string, number>>({});
   const [balancesLoading, setBalancesLoading] = useState(false);
 
@@ -67,16 +77,17 @@ export default function ProvidersPage() {
       const data = await res.json();
       setBalances(data.balances ?? {});
       setTotalsByCurrency(data.totalsByCurrency ?? {});
-    } catch (e: any) {
-      setMsg(`Error: ${e.message}`);
+    } catch (error) {
+      setMsg(`Error: ${getErrorMessage(error)}`);
     } finally {
       setBalancesLoading(false);
     }
   }
 
   useEffect(() => {
-    loadProviders();
-    loadBalances();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadProviders();
+    void loadBalances();
   }, []);
 
   function resetForm() {
@@ -101,7 +112,7 @@ export default function ProvidersPage() {
     setMsg(null);
 
     try {
-      const payload: Record<string, any> = {
+      const payload: Record<string, string | null | undefined> = {
         id: editingId,
         name,
         api_url: apiUrl,
@@ -127,8 +138,8 @@ export default function ProvidersPage() {
       resetForm();
       await loadProviders();
       await loadBalances();
-    } catch (e: any) {
-      setMsg(`Error: ${e.message}`);
+    } catch (error) {
+      setMsg(`Error: ${getErrorMessage(error)}`);
     } finally {
       setLoading(false);
     }
@@ -154,8 +165,8 @@ export default function ProvidersPage() {
 
       await loadProviders();
       setMsg("Provider deleted.");
-    } catch (e: any) {
-      setMsg(`Error: ${e.message}`);
+    } catch (error) {
+      setMsg(`Error: ${getErrorMessage(error)}`);
     } finally {
       setLoading(false);
     }

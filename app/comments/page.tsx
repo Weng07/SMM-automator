@@ -28,7 +28,8 @@ export default function CommentsPage() {
   }
 
   useEffect(() => {
-    load();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
   }, []);
 
   async function upload(e: React.FormEvent) {
@@ -65,8 +66,8 @@ export default function CommentsPage() {
       }
 
       load();
-    } catch (e: any) {
-      setMsg(`Error: ${e.message}`);
+    } catch (error) {
+      setMsg(`Error: ${error instanceof Error ? error.message : "Unexpected error."}`);
     } finally {
       setUploading(false);
     }

@@ -120,14 +120,14 @@ export async function getProviderBalances(): Promise<ProviderBalanceResult[]> {
           balance,
           currency,
         };
-      } catch (e: any) {
+      } catch (error) {
         return {
           providerId: provider.id,
           providerName: provider.name,
           apiUrl: provider.api_url,
           balance: 0,
           currency: "USD",
-          error: e?.message ?? "Failed to fetch balance.",
+          error: error instanceof Error ? error.message : "Failed to fetch balance.",
         };
       }
     })

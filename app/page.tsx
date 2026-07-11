@@ -28,11 +28,8 @@ type Order = {
   created_at: string;
 };
 
-type Pool = { id: string; name: string; unused_count: number };
-
-
 export default function OverviewPage() {
-  const [orders, setOrders] = useState<Order[]>(() => {
+  const [, setOrders] = useState<Order[]>(() => {
     if (typeof window === "undefined") return [];
 
     const cached = window.localStorage.getItem("panelist_recent_orders");
@@ -45,7 +42,7 @@ export default function OverviewPage() {
       return [];
     }
   });
-  const [ordersLoading, setOrdersLoading] = useState(() => {
+  const [, setOrdersLoading] = useState(() => {
     if (typeof window === "undefined") return true;
 
     return !window.localStorage.getItem("panelist_recent_orders");
@@ -153,8 +150,9 @@ export default function OverviewPage() {
   }
 
   useEffect(() => {
-    loadOrders();
-    loadStats();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadOrders();
+    void loadStats();
   }, []);
 
   async function submitOrder(e: React.FormEvent) {
@@ -186,8 +184,8 @@ export default function OverviewPage() {
       setLinks("");
       loadOrders();
       loadStats();
-    } catch (e: any) {
-      setMsg(`Error: ${e.message}`);
+    } catch (error) {
+      setMsg(`Error: ${error instanceof Error ? error.message : "Unexpected error."}`);
     } finally {
       setLoading(false);
     }

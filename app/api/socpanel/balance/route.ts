@@ -5,9 +5,9 @@ export async function GET() {
   try {
     const balance = await fetchBalance();
     return NextResponse.json(balance);
-  } catch (e: any) {
+  } catch (error) {
     return NextResponse.json(
-      { error: e?.message ?? "Failed to fetch balance." },
+      { error: error instanceof Error ? error.message : "Failed to fetch balance." },
       { status: 500 }
     );
   }

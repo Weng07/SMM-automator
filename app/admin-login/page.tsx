@@ -1,20 +1,21 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { LockKeyhole } from "lucide-react";
 
 function AdminLoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function login(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setSuccess("");
     setLoading(true);
 
     try {
@@ -30,16 +31,19 @@ function AdminLoginForm() {
 
       if (!res.ok) {
         setError(data.error ?? "Login failed.");
+        setLoading(false);
         return;
       }
 
       const nextPath = searchParams.get("next") || "/services";
+      setSuccess("Login successful. Redirecting...");
+      setLoading(false);
 
-      router.push(nextPath);
-      router.refresh();
+      window.setTimeout(() => {
+        window.location.replace(nextPath);
+      }, 500);
     } catch {
       setError("Login failed.");
-    } finally {
       setLoading(false);
     }
   }
@@ -83,6 +87,7 @@ function AdminLoginForm() {
         </div>
 
         {error && <p className="text-sm text-red-400">{error}</p>}
+        {success && <p className="text-sm text-emerald-400">{success}</p>}
 
         <button
           className="btn"

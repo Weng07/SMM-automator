@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import {
   LayoutGrid,
   ListChecks,
   Menu,
   MessagesSquare,
   SlidersHorizontal,
-  Sparkles,
   Wallet,
   X,
 } from "lucide-react";
@@ -28,7 +28,7 @@ export default function Sidebar() {
   const [balanceError, setBalanceError] = useState(false);
 
   useEffect(() => {
-    fetch("/api/panel/balance")
+    void fetch("/api/panel/balance")
       .then((r) => r.json())
       .then((d) => {
         if (d.error) setBalanceError(true);
@@ -37,15 +37,12 @@ export default function Sidebar() {
       .catch(() => setBalanceError(true));
   }, []);
 
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
 
   return (
     <>
       <header className="top-shell sticky top-0 z-40 mx-auto mt-3 flex w-[calc(100%-24px)] max-w-[1500px] items-center justify-between gap-3 px-4 py-3">
         <Link href="/" className="flex min-w-0 items-center gap-3">
-          <img src="/logo.svg" alt="Panelist logo" className="h-10 w-10 rounded-app object-contain" />
+          <Image src="/logo.svg" alt="Panelist logo" width={40} height={40} className="h-10 w-10 rounded-app object-contain" />
           <div className="min-w-0">
             <span className="display block truncate text-[17px] font-semibold tracking-tight">Panelist</span>
           </div>
@@ -86,7 +83,7 @@ export default function Sidebar() {
       <aside className={`drawer-panel ${open ? "open" : ""}`}>
         <div className="flex items-center justify-between border-b border-white/10 p-4">
           <div className="flex items-center gap-3">
-            <img src="/logo.svg" alt="Panelist logo" className="h-10 w-10 rounded-app object-contain" />
+            <Image src="/logo.svg" alt="Panelist logo" width={40} height={40} className="h-10 w-10 rounded-app object-contain" />
             <span className="display text-lg font-semibold">Panelist</span>
           </div>
           <button type="button" className="hamburger-btn" onClick={() => setOpen(false)} aria-label="Close menu">
@@ -99,7 +96,7 @@ export default function Sidebar() {
             const active = pathname === l.href;
             const Icon = l.icon;
             return (
-              <Link key={l.href} href={l.href} className={`drawer-link ${active ? "active" : ""}`}>
+              <Link key={l.href} href={l.href} onClick={() => setOpen(false)} className={`drawer-link ${active ? "active" : ""}`}>
                 <Icon size={17} strokeWidth={2.2} />
                 {l.label}
               </Link>

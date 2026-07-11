@@ -75,9 +75,9 @@ export async function POST(req: NextRequest) {
     if (itemsErr) throw itemsErr;
 
     return NextResponse.json({ pool, count: comments.length });
-  } catch (e: any) {
+  } catch (error) {
     return NextResponse.json(
-      { error: e?.message ?? "Failed to upload comments." },
+      { error: error instanceof Error ? error.message : "Failed to upload comments." },
       { status: 500 }
     );
   }
