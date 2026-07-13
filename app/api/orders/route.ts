@@ -1,5 +1,6 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { retryOrderForId, submitOrderForLink } from "@/lib/place-order";
+import { parseOrderLinks } from "@/lib/order-links";
 
 type Platform = "x" | "instagram" | "tiktok" | "linkedin" | "youtube";
 
@@ -123,12 +124,9 @@ export async function POST(req: NextRequest) {
 
     const batchLinks = Array.isArray(links)
       ? links
-          .map((item) => String(item).trim())
+          .flatMap((item) => parseOrderLinks(String(item)))
           .filter(Boolean)
-      : rawLinks
-          .split(/\r?\n|,/)
-          .map((item) => item.trim())
-          .filter(Boolean);
+      : parseOrderLinks(rawLinks);
 
     if (!tier || batchLinks.length === 0) {
       return NextResponse.json(

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PLATFORM_META, PLATFORMS } from "@/lib/platform-meta";
+import { parseOrderLinks } from "@/lib/order-links";
 import {
   CheckCircle2,
   Clock,
@@ -90,10 +91,7 @@ export default function OverviewPage() {
   const [tier, setTier] = useState("regular");
   const [links, setLinks] = useState("");
 
-  const linkList = useMemo(
-    () => links.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean),
-    [links]
-  );
+  const linkList = useMemo(() => parseOrderLinks(links), [links]);
 
   async function loadOrders() {
     const hasCachedOrders =
