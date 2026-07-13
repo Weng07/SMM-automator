@@ -78,6 +78,7 @@ export default function OrdersPage() {
     return !window.localStorage.getItem("panelist_orders_page_orders");
   });
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
@@ -156,6 +157,45 @@ export default function OrdersPage() {
     }
   }
 
+  async function syncOrders() {
+    setSyncing(true);
+    setFeedback(null);
+    let shouldRefresh = false;
+
+    try {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync", limit: 50 }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Sync failed.");
+      }
+
+      setFeedback(
+        `${data.checkedOrders ?? 0} orders checked, ${data.updatedOrders ?? 0} updated, ${data.deletedOrders ?? 0} duplicate order${(data.deletedOrders ?? 0) === 1 ? "" : "s"} removed, ${data.canceledServices ?? 0} service${(data.canceledServices ?? 0) === 1 ? "" : "s"} marked as canceled on provider side, ${data.removedDuplicateServices ?? 0} duplicate trace${(data.removedDuplicateServices ?? 0) === 1 ? "" : "s"} removed.`
+      );
+      shouldRefresh = true;
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Sync failed.");
+    } finally {
+      setSyncing(false);
+    }
+
+    if (shouldRefresh) {
+      setLoading(true);
+      try {
+        await loadOrders();
+        await loadStats();
+      } finally {
+        setLoading(false);
+      }
+    }
+  }
+
   const visibleOrders = orders.filter((order) => {
     if (statusFilter === "all") return true;
     return order.status === statusFilter;
@@ -225,25 +265,39 @@ export default function OrdersPage() {
         <div className="flex items-center justify-between gap-3">
           <div className="text-sm font-semibold">Order list</div>
 
-          <button
-            type="button"
-            className="btn-secondary flex items-center gap-2"
-            onClick={() => {
-              void (async () => {
-                setLoading(true);
-                try {
-                  await loadOrders();
-                  await loadStats();
-                } finally {
-                  setLoading(false);
-                }
-              })();
-            }}
-            disabled={loading}
-          >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-            {loading ? "Refreshing..." : "Refresh"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="btn-secondary flex items-center gap-2"
+              onClick={() => {
+                void syncOrders();
+              }}
+              disabled={syncing || loading}
+            >
+              <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
+              {syncing ? "Syncing..." : "Sync"}
+            </button>
+
+            <button
+              type="button"
+              className="btn-secondary flex items-center gap-2"
+              onClick={() => {
+                void (async () => {
+                  setLoading(true);
+                  try {
+                    await loadOrders();
+                    await loadStats();
+                  } finally {
+                    setLoading(false);
+                  }
+                })();
+              }}
+              disabled={loading || syncing}
+            >
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+              {loading ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
         </div>
 
         <div
