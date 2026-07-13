@@ -25,6 +25,9 @@ type Order = {
     panel_service_id?: string;
     error?: string;
     skipped?: boolean;
+    debug_detected_categories?: string[];
+    debug_effective_categories?: string[];
+    debug_slot_decision?: string;
   }[];
   created_at: string;
 };
@@ -386,6 +389,16 @@ export default function OrdersPage() {
                   {order.services_ordered.map((service, index) => {
                     const isFailure = Boolean(service.error && !service.skipped);
                     const isSkipped = Boolean(service.skipped);
+                    const hasDebugTrace =
+                      Array.isArray(service.debug_detected_categories) ||
+                      Array.isArray(service.debug_effective_categories) ||
+                      Boolean(service.debug_slot_decision);
+
+                    const detected = (service.debug_detected_categories ?? []).join("|");
+                    const effective = (service.debug_effective_categories ?? []).join("|");
+                    const debugTrace = hasDebugTrace
+                      ? ` · dbg: detected=[${detected || "none"}] effective=[${effective || "none"}] decision=${service.debug_slot_decision ?? "n/a"}`
+                      : "";
 
                     return (
                       <span
@@ -396,6 +409,7 @@ export default function OrdersPage() {
                         {service.error && <AlertTriangle size={11} />}
                         {service.service_type}: {service.quantity}
                         {service.provider_name ? ` · ${service.provider_name}` : ""}
+                        {debugTrace}
                       </span>
                     );
                   })}

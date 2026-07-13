@@ -388,7 +388,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const detectedLinks = batchLinks.map((item) => {
+    const normalizedUniqueLinks = [
+      ...new Set(batchLinks.map((item) => item.trim()).filter(Boolean)),
+    ];
+
+    const detectedLinks = normalizedUniqueLinks.map((item) => {
       const detectedPlatform = detectPlatformFromLink(item);
 
       return {
@@ -429,7 +433,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       queued: true,
-      count: batchLinks.length,
+      count: normalizedUniqueLinks.length,
       message: "Links detected and queued for background processing.",
     });
   } catch (error) {

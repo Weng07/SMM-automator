@@ -17,6 +17,9 @@ type ServiceResult = {
   skipped?: boolean;
   error?: string;
   status?: string;
+  debug_detected_categories?: string[];
+  debug_effective_categories?: string[];
+  debug_slot_decision?: string;
 };
 
 function isInstagramReel(link: string) {
@@ -104,24 +107,30 @@ function resolveCommentCategories(params: {
   const presetCategories = [...new Set(params.presetCategories)];
 
   if (params.platform !== "x") {
-    return presetCategories;
+    return { categories: presetCategories, shouldSkip: false as const };
   }
 
   const inferredFromLink = inferXCommentCategoriesFromLink(params.link);
 
   if (inferredFromLink.length === 0) {
-    return presetCategories;
+    return { categories: presetCategories, shouldSkip: false as const };
   }
 
   if (presetCategories.length === 0) {
-    return inferredFromLink;
+    return { categories: inferredFromLink, shouldSkip: false as const };
   }
 
   const intersection = presetCategories.filter((category) =>
     inferredFromLink.includes(category)
   );
 
-  return intersection.length > 0 ? intersection : inferredFromLink;
+  if (intersection.length > 0) {
+    return { categories: intersection, shouldSkip: false as const };
+  }
+
+  // Keyword was detected on the link, but this slot is configured for
+  // different categories, so skip this slot entirely.
+  return { categories: presetCategories, shouldSkip: true as const };
 }
 
 async function findOldestAvailablePoolForCategories(params: {
@@ -313,6 +322,8 @@ export async function submitOrderForLink(params: {
   if (orderErr) throw orderErr;
 
   const results: ServiceResult[] = [];
+  const detectedLinkCategories =
+    params.platform === "x" ? inferXCommentCategoriesFromLink(params.link) : [];
 
   if (params.platform === "instagram" && !instagramShouldOrderViews) {
     results.push({
@@ -386,6 +397,7 @@ export async function submitOrderForLink(params: {
 
     try {
       let comments: string | undefined;
+      let effectiveCategoriesForResult: string[] | undefined;
 
       if (isCommentServiceType(preset.service_type)) {
         if (params.tier !== "priority") {
@@ -405,13 +417,32 @@ export async function submitOrderForLink(params: {
         const selectedCategories = normalizeCommentCategories(
           (preset as { comment_categories?: unknown }).comment_categories
         );
-        const effectiveCategories = resolveCommentCategories({
+        const categoryDecision = resolveCommentCategories({
           platform: params.platform,
           link: params.link,
           presetCategories: selectedCategories,
         });
+        const effectiveCategories = categoryDecision.categories;
+        effectiveCategoriesForResult = effectiveCategories;
 
-      let poolId = params.commentPoolId ?? null;
+        if (categoryDecision.shouldSkip) {
+          results.push({
+            service_type: preset.service_type,
+            api_provider_id: providerId,
+            provider_name: providerName,
+            panel_service_id: serviceId,
+            socpanel_service_id: serviceId,
+            quantity: 0,
+            skipped: true,
+            error: "Skipped: link keyword maps to a different comment slot category.",
+            debug_detected_categories: detectedLinkCategories,
+            debug_effective_categories: effectiveCategories,
+            debug_slot_decision: "slot_mismatch_skipped",
+          });
+          continue;
+        }
+
+        let poolId = params.commentPoolId ?? null;
 
         if (poolId) {
           const { data: poolRow, error: poolErr } = await supabase
@@ -429,6 +460,9 @@ export async function submitOrderForLink(params: {
               socpanel_service_id: serviceId,
               quantity: preset.quantity,
               error: "Selected comment pool is invalid for this platform.",
+              debug_detected_categories: detectedLinkCategories,
+              debug_effective_categories: effectiveCategories,
+              debug_slot_decision: "invalid_manual_pool",
             });
             continue;
           }
@@ -445,6 +479,9 @@ export async function submitOrderForLink(params: {
               socpanel_service_id: serviceId,
               quantity: preset.quantity,
               error: `Selected pool category is ${poolRow.category ?? "uncategorized"} and does not match this slot.`,
+              debug_detected_categories: detectedLinkCategories,
+              debug_effective_categories: effectiveCategories,
+              debug_slot_decision: "manual_pool_category_mismatch",
             });
             continue;
           }
@@ -470,6 +507,9 @@ export async function submitOrderForLink(params: {
               socpanel_service_id: serviceId,
               quantity: preset.quantity,
               error: `No unused comment pool found for ${params.platform}${categoryHint}.`,
+              debug_detected_categories: detectedLinkCategories,
+              debug_effective_categories: effectiveCategories,
+              debug_slot_decision: "no_pool_found",
             });
             continue;
           }
@@ -488,6 +528,9 @@ export async function submitOrderForLink(params: {
             socpanel_service_id: serviceId,
             quantity: preset.quantity,
             error: `Only ${picked.length} unused comments left in the pool (needed ${preset.quantity}).`,
+            debug_detected_categories: detectedLinkCategories,
+            debug_effective_categories: effectiveCategories,
+            debug_slot_decision: "insufficient_comments",
           });
           continue;
         }
@@ -513,6 +556,15 @@ export async function submitOrderForLink(params: {
           quantity: preset.quantity,
           error: res.error,
           status: res.status,
+          debug_detected_categories: isCommentServiceType(preset.service_type)
+            ? detectedLinkCategories
+            : undefined,
+          debug_effective_categories: isCommentServiceType(preset.service_type)
+            ? effectiveCategoriesForResult
+            : undefined,
+          debug_slot_decision: isCommentServiceType(preset.service_type)
+            ? "submitted_with_categories"
+            : undefined,
         });
       } else {
         results.push({
@@ -525,6 +577,15 @@ export async function submitOrderForLink(params: {
           panel_order_id: res.order,
           socpanel_order_id: res.order,
           status: res.status,
+          debug_detected_categories: isCommentServiceType(preset.service_type)
+            ? detectedLinkCategories
+            : undefined,
+          debug_effective_categories: isCommentServiceType(preset.service_type)
+            ? effectiveCategoriesForResult
+            : undefined,
+          debug_slot_decision: isCommentServiceType(preset.service_type)
+            ? "submitted_with_categories"
+            : undefined,
         });
       }
     } catch (error) {
