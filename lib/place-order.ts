@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase";
 import { placePanelOrder } from "./smm-panel";
+import { isXCommentCategory } from "./comment-categories";
 
 type Platform = "x" | "instagram" | "tiktok" | "linkedin" | "youtube";
 type Tier = "priority" | "regular";
@@ -50,8 +51,58 @@ async function findOldestAvailablePool(platform: Platform) {
 
   const { data: pools, error } = await supabase
     .from("comment_pools")
-    .select("id, name, created_at")
+    .select("id, name, category, created_at")
     .eq("platform", platform)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+  if (!pools || pools.length === 0) return null;
+
+  for (const pool of pools) {
+    const { count, error: countError } = await supabase
+      .from("comment_pool_items")
+      .select("id", { count: "exact", head: true })
+      .eq("pool_id", pool.id)
+      .eq("used", false);
+
+    if (countError) throw countError;
+
+    if ((count ?? 0) > 0) {
+      return pool;
+    }
+  }
+
+  return null;
+}
+
+function isCommentServiceType(serviceType: string) {
+  return serviceType === "comments" || serviceType.startsWith("comments_slot_");
+}
+
+function normalizeCommentCategories(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => String(item).trim().toLowerCase())
+    .filter((item): item is string => isXCommentCategory(item));
+}
+
+async function findOldestAvailablePoolForCategories(params: {
+  platform: Platform;
+  categories: string[];
+}) {
+  if (params.categories.length === 0) {
+    return findOldestAvailablePool(params.platform);
+  }
+
+  const supabase = supabaseAdmin();
+  const { data: pools, error } = await supabase
+    .from("comment_pools")
+    .select("id, name, category, created_at")
+    .eq("platform", params.platform)
+    .in("category", params.categories)
     .order("created_at", { ascending: true });
 
   if (error) throw error;
@@ -240,6 +291,24 @@ export async function submitOrderForLink(params: {
   }
 
   for (const preset of filteredPresets) {
+    if (
+      params.platform === "x" &&
+      params.tier === "priority" &&
+      preset.service_type === "comments"
+    ) {
+      results.push({
+        service_type: preset.service_type,
+        api_provider_id: preset.api_provider_id ?? null,
+        provider_name: preset.api_providers?.name ?? "Provider",
+        panel_service_id: preset.panel_service_id || preset.socpanel_service_id,
+        socpanel_service_id: preset.panel_service_id || preset.socpanel_service_id,
+        quantity: preset.quantity,
+        skipped: true,
+        error: "Legacy comments preset skipped. Use comments slot 1/2 in Services.",
+      });
+      continue;
+    }
+
     const serviceId = preset.panel_service_id || preset.socpanel_service_id;
     const providerId = preset.api_provider_id ?? null;
     const providerName =
@@ -282,14 +351,9 @@ export async function submitOrderForLink(params: {
 
     try {
       let comments: string | undefined;
-      
-    if (preset.service_type === "comments") {
-      let poolId = params.commentPoolId ?? null;
 
-      if (!poolId) {
-        const autoPool = await findOldestAvailablePool(params.platform);
-
-        if (!autoPool) {
+      if (isCommentServiceType(preset.service_type)) {
+        if (params.tier !== "priority") {
           results.push({
             service_type: preset.service_type,
             api_provider_id: providerId,
@@ -297,13 +361,81 @@ export async function submitOrderForLink(params: {
             panel_service_id: serviceId,
             socpanel_service_id: serviceId,
             quantity: preset.quantity,
-            error: `No unused comment pool found for ${params.platform}.`,
+            skipped: true,
+            error: "Comments are only submitted in priority mode.",
           });
           continue;
         }
 
-        poolId = autoPool.id;
-      }
+        const selectedCategories = normalizeCommentCategories(
+          (preset as { comment_categories?: unknown }).comment_categories
+        );
+
+      let poolId = params.commentPoolId ?? null;
+
+        if (poolId) {
+          const { data: poolRow, error: poolErr } = await supabase
+            .from("comment_pools")
+            .select("id, category, platform")
+            .eq("id", poolId)
+            .single();
+
+          if (poolErr || !poolRow || poolRow.platform !== params.platform) {
+            results.push({
+              service_type: preset.service_type,
+              api_provider_id: providerId,
+              provider_name: providerName,
+              panel_service_id: serviceId,
+              socpanel_service_id: serviceId,
+              quantity: preset.quantity,
+              error: "Selected comment pool is invalid for this platform.",
+            });
+            continue;
+          }
+
+          if (
+            selectedCategories.length > 0 &&
+            (!poolRow.category || !selectedCategories.includes(poolRow.category))
+          ) {
+            results.push({
+              service_type: preset.service_type,
+              api_provider_id: providerId,
+              provider_name: providerName,
+              panel_service_id: serviceId,
+              socpanel_service_id: serviceId,
+              quantity: preset.quantity,
+              error: `Selected pool category is ${poolRow.category ?? "uncategorized"} and does not match this slot.`,
+            });
+            continue;
+          }
+        }
+
+        if (!poolId) {
+          const autoPool = await findOldestAvailablePoolForCategories({
+            platform: params.platform,
+            categories: selectedCategories,
+          });
+
+          if (!autoPool) {
+            const categoryHint =
+              selectedCategories.length > 0
+                ? ` in categories [${selectedCategories.join(", ")}]`
+                : "";
+
+            results.push({
+              service_type: preset.service_type,
+              api_provider_id: providerId,
+              provider_name: providerName,
+              panel_service_id: serviceId,
+              socpanel_service_id: serviceId,
+              quantity: preset.quantity,
+              error: `No unused comment pool found for ${params.platform}${categoryHint}.`,
+            });
+            continue;
+          }
+
+          poolId = autoPool.id;
+        }
 
         const picked = await popComments(poolId as string, preset.quantity);
 

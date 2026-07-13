@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { X_COMMENT_CATEGORIES } from "@/lib/comment-categories";
 
-type Pool = { id: string; name: string; unused_count: number };
+type Pool = {
+  id: string;
+  name: string;
+  platform?: string;
+  category?: string | null;
+  unused_count: number;
+};
 
 type Account = {
   id: string;
@@ -20,6 +27,7 @@ export default function AccountsPage() {
   const [handle, setHandle] = useState("");
   const [tier, setTier] = useState("priority");
   const [commentPoolId, setCommentPoolId] = useState("");
+  const [xCommentCategory, setXCommentCategory] = useState("");
 
   async function load() {
     const [a, p] = await Promise.all([
@@ -37,18 +45,33 @@ export default function AccountsPage() {
 
   async function addAccount(e: React.FormEvent) {
     e.preventDefault();
+    const selectedTier = tier;
+
     await fetch("/api/watched-accounts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         handle,
-        tier,
-        comment_pool_id: commentPoolId || null,
+        tier: selectedTier,
+        comment_pool_id: selectedTier === "priority" ? commentPoolId || null : null,
       }),
     });
     setHandle("");
+    setXCommentCategory("");
     load();
   }
+
+  const visiblePools = pools.filter((pool) => {
+    if (pool.platform && pool.platform !== "x") {
+      return false;
+    }
+
+    if (xCommentCategory && pool.category !== xCommentCategory) {
+      return false;
+    }
+
+    return true;
+  });
 
   async function toggleActive(acc: Account) {
     await fetch("/api/watched-accounts", {
@@ -76,7 +99,7 @@ export default function AccountsPage() {
 
       <form onSubmit={addAccount} className="panel p-5 flex flex-col gap-4">
         <div className="text-sm font-medium">Watch a new account</div>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="text-xs text-[#8b929c] block mb-1">Handle</label>
             <input
@@ -89,9 +112,37 @@ export default function AccountsPage() {
           </div>
           <div>
             <label className="text-xs text-[#8b929c] block mb-1">Tier</label>
-            <select className="input" value={tier} onChange={(e) => setTier(e.target.value)}>
+            <select
+              className="input"
+              value={tier}
+              onChange={(e) => {
+                const nextTier = e.target.value;
+                setTier(nextTier);
+
+                if (nextTier !== "priority") {
+                  setCommentPoolId("");
+                  setXCommentCategory("");
+                }
+              }}
+            >
               <option value="priority">priority</option>
               <option value="regular">regular</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-[#8b929c] block mb-1">X comment category</label>
+            <select
+              className="input"
+              value={xCommentCategory}
+              onChange={(e) => setXCommentCategory(e.target.value)}
+              disabled={tier !== "priority"}
+            >
+              <option value="">all categories</option>
+              {X_COMMENT_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -100,14 +151,21 @@ export default function AccountsPage() {
               className="input"
               value={commentPoolId}
               onChange={(e) => setCommentPoolId(e.target.value)}
+              disabled={tier !== "priority"}
             >
               <option value="">— none —</option>
-              {pools.map((p) => (
+              {visiblePools.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} ({p.unused_count} left)
+                  {p.name}
+                  {p.category ? ` [${p.category}]` : ""} ({p.unused_count} left)
                 </option>
               ))}
             </select>
+            {tier !== "priority" && (
+              <div className="text-[11px] text-[#8b929c] mt-1">
+                Comments are only used in priority mode.
+              </div>
+            )}
           </div>
         </div>
         <div>

@@ -64,6 +64,7 @@ create table if not exists service_presets (
   panel_service_id text,
   socpanel_service_id text, -- legacy alias kept so older data does not break
   quantity int not null default 0,
+  comment_categories text[] not null default '{}',
   enabled boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -74,6 +75,7 @@ create table if not exists service_presets (
 alter table service_presets add column if not exists api_provider_id uuid references api_providers(id) on delete set null;
 alter table service_presets add column if not exists panel_service_id text;
 alter table service_presets add column if not exists socpanel_service_id text;
+alter table service_presets add column if not exists comment_categories text[] not null default '{}';
 update service_presets
 set panel_service_id = coalesce(panel_service_id, socpanel_service_id)
 where panel_service_id is null and socpanel_service_id is not null;
@@ -83,8 +85,12 @@ create table if not exists comment_pools (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   platform platform_t not null,
+  category text,
   created_at timestamptz not null default now()
 );
+
+alter table comment_pools add column if not exists category text;
+
 
 create table if not exists comment_pool_items (
   id uuid primary key default gen_random_uuid(),

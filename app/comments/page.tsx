@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PLATFORM_META, PLATFORMS, PlatformKey } from "@/lib/platform-meta";
+import { X_COMMENT_CATEGORIES } from "@/lib/comment-categories";
 import { UploadCloud } from "lucide-react";
 
 type Pool = {
   id: string;
   name: string;
   platform: string;
+  category?: string | null;
   unused_count: number;
   created_at: string;
 };
@@ -16,6 +18,7 @@ export default function CommentsPage() {
   const [pools, setPools] = useState<Pool[]>([]);
   const [filterPlatform, setFilterPlatform] = useState<PlatformKey>("x");
   const [uploadPlatform, setUploadPlatform] = useState<PlatformKey>("x");
+  const [xCategory, setXCategory] = useState<string>(X_COMMENT_CATEGORIES[0]);
   const [name, setName] = useState("");
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -46,6 +49,10 @@ export default function CommentsPage() {
       form.set("file", file);
       form.set("name", name || file.name);
       form.set("platform", uploadPlatform);
+
+      if (uploadPlatform === "x") {
+        form.set("category", xCategory);
+      }
 
       const res = await fetch("/api/comments/upload", {
         method: "POST",
@@ -155,6 +162,25 @@ export default function CommentsPage() {
               required
             />
           </div>
+
+          {uploadPlatform === "x" && (
+            <div>
+              <label className="text-xs text-[#8b8fa3] block mb-1">
+                X category
+              </label>
+              <select
+                className="input"
+                value={xCategory}
+                onChange={(e) => setXCategory(e.target.value)}
+              >
+                {X_COMMENT_CATEGORIES.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -205,7 +231,10 @@ export default function CommentsPage() {
               className="panel-alt flex items-center justify-between"
               style={{ padding: "16px" }}
             >
-              <span className="text-sm">{p.name}</span>
+              <span className="text-sm">
+                {p.name}
+                {p.platform === "x" && p.category ? ` [${p.category}]` : ""}
+              </span>
               <span className="mono text-xs text-[#8b8fa3]">
                 {p.unused_count} unused left
               </span>

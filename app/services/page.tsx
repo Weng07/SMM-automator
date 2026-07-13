@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PLATFORM_META, PLATFORMS, PlatformKey } from "@/lib/platform-meta";
+import { X_COMMENT_CATEGORIES } from "@/lib/comment-categories";
 import { RefreshCw, Search, ServerCog } from "lucide-react";
 
 type Provider = {
@@ -30,6 +31,7 @@ type Preset = {
   panel_service_id: string | null;
   socpanel_service_id: string | null;
   quantity: number;
+  comment_categories?: string[] | null;
   enabled: boolean;
 };
 
@@ -38,6 +40,7 @@ type DraftPreset = {
   panel_service_id: string | null;
   socpanel_service_id: string | null;
   quantity: number;
+  comment_categories: string[];
   enabled: boolean;
 };
 
@@ -52,13 +55,38 @@ const DEFAULT_SERVICE_TYPES: Record<string, Record<string, string[]>> = {
     youtube: ["views", "likes", "subscribers"],
   },
   priority: {
-    x: ["views", "likes", "retweets", "comments"],
+    x: ["views", "likes", "retweets", "comments_slot_1", "comments_slot_2"],
     instagram: ["views", "likes", "comments", "shares"],
     tiktok: ["views", "likes", "shares", "comments"],
     linkedin: ["likes", "comments", "shares"],
     youtube: ["views", "likes", "comments", "subscribers"],
   },
 };
+
+function isCommentSlot(serviceType: string) {
+  return serviceType.startsWith("comments_slot_");
+}
+
+function serviceTypeLabel(serviceType: string) {
+  if (!isCommentSlot(serviceType)) {
+    return serviceType;
+  }
+
+  const slot = serviceType.replace("comments_slot_", "");
+  return `comments slot ${slot}`;
+}
+
+function toggleCategorySelection(current: string[], category: string) {
+  if (current.includes(category)) {
+    return current.filter((item) => item !== category);
+  }
+
+  if (current.length >= 3) {
+    return current;
+  }
+
+  return [...current, category];
+}
 
 function makeRowKey(tier: string, serviceType: string) {
   return `${tier}:${serviceType}`;
@@ -141,6 +169,9 @@ export default function ServicesPage() {
       panel_service_id: savedServiceId,
       socpanel_service_id: savedServiceId,
       quantity: preset?.quantity ?? 0,
+      comment_categories: Array.isArray(preset?.comment_categories)
+        ? preset.comment_categories
+        : [],
       enabled: preset?.enabled ?? true,
     };
   }
@@ -202,6 +233,7 @@ export default function ServicesPage() {
       panel_service_id: selectedServiceId,
       socpanel_service_id: selectedServiceId,
       quantity: draft.quantity,
+      comment_categories: draft.comment_categories,
       enabled: draft.enabled,
     };
 
@@ -409,7 +441,7 @@ export default function ServicesPage() {
                     }}
                   >
                     <div className="text-sm capitalize font-medium">
-                      {serviceType}
+                      {serviceTypeLabel(serviceType)}
                     </div>
 
                     <select
@@ -453,6 +485,41 @@ export default function ServicesPage() {
                         })
                       }
                     />
+
+                    {isCommentSlot(serviceType) && tier === "priority" && platform === "x" && (
+                      <div
+                        className="flex flex-wrap gap-2"
+                        aria-label="Comment categories"
+                      >
+                        {X_COMMENT_CATEGORIES.map((category) => {
+                          const selectedCategories = isEditing
+                            ? draft.comment_categories
+                            : preset?.comment_categories ?? [];
+                          const active = selectedCategories.includes(category);
+
+                          return (
+                            <button
+                              key={category}
+                              type="button"
+                              className={`platform-pill ${active ? "active" : ""}`}
+                              disabled={!isEditing}
+                              onClick={() => {
+                                const next = toggleCategorySelection(
+                                  draft.comment_categories,
+                                  category
+                                );
+
+                                updateDraft(tier, serviceType, {
+                                  comment_categories: next,
+                                });
+                              }}
+                            >
+                              {category}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     <label className="toggle-label">
                       <input

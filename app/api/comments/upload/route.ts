@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Papa from "papaparse";
 import { supabaseAdmin } from "@/lib/supabase";
+import { isXCommentCategory } from "@/lib/comment-categories";
 
 export async function GET(req: NextRequest) {
   const supabase = supabaseAdmin();
@@ -9,7 +10,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from("comment_pools")
-    .select("id, name, platform, created_at")
+    .select("id, name, platform, category, created_at")
     .order("created_at", { ascending: false });
 
   if (platform) query = query.eq("platform", platform);
@@ -39,12 +40,21 @@ export async function POST(req: NextRequest) {
     const file = formData.get("file") as File | null;
     const name = (formData.get("name") as string) || "Untitled pool";
     const platform = formData.get("platform") as string | null;
+    const categoryRaw = (formData.get("category") as string | null)?.trim().toLowerCase() ?? "";
+    const category = categoryRaw || null;
 
     if (!file) {
       return NextResponse.json({ error: "No file uploaded." }, { status: 400 });
     }
     if (!platform) {
       return NextResponse.json({ error: "platform is required." }, { status: 400 });
+    }
+
+    if (platform === "x" && (!category || !isXCommentCategory(category))) {
+      return NextResponse.json(
+        { error: "X comment category is required and must be litho, thanos, or ignite." },
+        { status: 400 }
+      );
     }
 
     const text = await file.text();
@@ -64,7 +74,7 @@ export async function POST(req: NextRequest) {
     const supabase = supabaseAdmin();
     const { data: pool, error: poolErr } = await supabase
       .from("comment_pools")
-      .insert({ name, platform })
+      .insert({ name, platform, category: platform === "x" ? category : null })
       .select()
       .single();
 

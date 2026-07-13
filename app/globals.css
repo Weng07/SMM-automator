@@ -311,7 +311,7 @@ body::before {
 
 .service-row {
   display: grid;
-  grid-template-columns: 110px 1fr 140px 64px;
+  grid-template-columns: 110px 1fr 120px 180px 64px;
   gap: 12px;
   align-items: center;
   padding: 10px;
@@ -525,7 +525,7 @@ textarea.input {
 }
 
 .service-row {
-  grid-template-columns: minmax(90px, 110px) minmax(260px, 1fr) minmax(90px, 140px) 64px;
+  grid-template-columns: minmax(90px, 110px) minmax(240px, 1fr) minmax(90px, 120px) minmax(150px, 180px) 64px;
 }
 
 @media (max-width: 900px) {
