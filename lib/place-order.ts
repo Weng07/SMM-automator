@@ -89,6 +89,41 @@ function normalizeCommentCategories(value: unknown): string[] {
     .filter((item): item is string => isXCommentCategory(item));
 }
 
+function inferXCommentCategoriesFromLink(link: string): string[] {
+  const normalized = link.toLowerCase();
+  const categories = ["litho", "ignite", "thanos"];
+
+  return categories.filter((category) => normalized.includes(category));
+}
+
+function resolveCommentCategories(params: {
+  platform: Platform;
+  link: string;
+  presetCategories: string[];
+}) {
+  const presetCategories = [...new Set(params.presetCategories)];
+
+  if (params.platform !== "x") {
+    return presetCategories;
+  }
+
+  const inferredFromLink = inferXCommentCategoriesFromLink(params.link);
+
+  if (inferredFromLink.length === 0) {
+    return presetCategories;
+  }
+
+  if (presetCategories.length === 0) {
+    return inferredFromLink;
+  }
+
+  const intersection = presetCategories.filter((category) =>
+    inferredFromLink.includes(category)
+  );
+
+  return intersection.length > 0 ? intersection : inferredFromLink;
+}
+
 async function findOldestAvailablePoolForCategories(params: {
   platform: Platform;
   categories: string[];
@@ -370,6 +405,11 @@ export async function submitOrderForLink(params: {
         const selectedCategories = normalizeCommentCategories(
           (preset as { comment_categories?: unknown }).comment_categories
         );
+        const effectiveCategories = resolveCommentCategories({
+          platform: params.platform,
+          link: params.link,
+          presetCategories: selectedCategories,
+        });
 
       let poolId = params.commentPoolId ?? null;
 
@@ -394,8 +434,8 @@ export async function submitOrderForLink(params: {
           }
 
           if (
-            selectedCategories.length > 0 &&
-            (!poolRow.category || !selectedCategories.includes(poolRow.category))
+            effectiveCategories.length > 0 &&
+            (!poolRow.category || !effectiveCategories.includes(poolRow.category))
           ) {
             results.push({
               service_type: preset.service_type,
@@ -413,13 +453,13 @@ export async function submitOrderForLink(params: {
         if (!poolId) {
           const autoPool = await findOldestAvailablePoolForCategories({
             platform: params.platform,
-            categories: selectedCategories,
+            categories: effectiveCategories,
           });
 
           if (!autoPool) {
             const categoryHint =
-              selectedCategories.length > 0
-                ? ` in categories [${selectedCategories.join(", ")}]`
+              effectiveCategories.length > 0
+                ? ` in categories [${effectiveCategories.join(", ")}]`
                 : "";
 
             results.push({

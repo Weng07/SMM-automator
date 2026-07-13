@@ -157,7 +157,7 @@ export default function CommentsPage() {
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,.txt"
+              accept=".csv,.xlsx,.xls,.docx,.doc,.txt"
               className="input"
               required
             />
