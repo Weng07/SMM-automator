@@ -82,6 +82,25 @@ function isCommentServiceType(serviceType: string) {
   return serviceType === "comments" || serviceType.startsWith("comments_slot_");
 }
 
+function normalizeServiceCategory(serviceType: string): string {
+  const normalized = serviceType.trim().toLowerCase();
+
+  if (normalized === "comments" || normalized.startsWith("comments_slot_")) {
+    return "comments";
+  }
+
+  // Treat reaction variants as one duplicate category.
+  if (normalized.includes("reaction")) {
+    return "reactions";
+  }
+
+  return normalized;
+}
+
+function shouldSubmitComments(params: { platform: Platform; tier: Tier }) {
+  return params.tier === "priority" || params.platform === "linkedin";
+}
+
 function normalizeCommentCategories(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -171,17 +190,16 @@ async function findOldestAvailablePoolForCategories(params: {
 
 async function wasServiceAlreadySubmitted(params: {
   platform: Platform;
-  tier: Tier;
   link: string;
   serviceType: string;
 }) {
   const supabase = supabaseAdmin();
+  const targetCategory = normalizeServiceCategory(params.serviceType);
 
   const { data, error } = await supabase
     .from("orders")
     .select("id, services_ordered")
     .eq("platform", params.platform)
-    .eq("tier", params.tier)
     .eq("link", params.link)
     .order("created_at", { ascending: false });
 
@@ -205,7 +223,7 @@ async function wasServiceAlreadySubmitted(params: {
       );
 
       return (
-        service.service_type === params.serviceType &&
+        normalizeServiceCategory(String(service.service_type ?? "")) === targetCategory &&
         !service.skipped &&
         hasSuccessfulId &&
         !isCanceled
@@ -362,7 +380,6 @@ export async function submitOrderForLink(params: {
 
     const alreadySubmitted = await wasServiceAlreadySubmitted({
       platform: params.platform,
-      tier: params.tier,
       link: params.link,
       serviceType: preset.service_type,
     });
@@ -400,7 +417,7 @@ export async function submitOrderForLink(params: {
       let effectiveCategoriesForResult: string[] | undefined;
 
       if (isCommentServiceType(preset.service_type)) {
-        if (params.tier !== "priority") {
+        if (!shouldSubmitComments({ platform: params.platform, tier: params.tier })) {
           results.push({
             service_type: preset.service_type,
             api_provider_id: providerId,
@@ -409,7 +426,7 @@ export async function submitOrderForLink(params: {
             socpanel_service_id: serviceId,
             quantity: preset.quantity,
             skipped: true,
-            error: "Comments are only submitted in priority mode.",
+            error: "Comments are only submitted in priority mode (except LinkedIn).",
           });
           continue;
         }
