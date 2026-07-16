@@ -391,9 +391,8 @@ export async function submitOrderForLink(params: {
         provider_name: providerName,
         panel_service_id: serviceId,
         socpanel_service_id: serviceId,
-        quantity: 0,
-        skipped: true,
-        error: "Duplicate service skipped because it was already submitted successfully for this link.",
+        quantity: preset.quantity,
+        error: "Duplicate order",
       });
 
       continue;

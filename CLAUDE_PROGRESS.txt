@@ -1,0 +1,4 @@
+2026-07-16
+- Simplified Orders service badges: hide skipped traces and show compact format (service · qty · panel).
+- Updated duplicate handling message to exactly "Duplicate order" and keep duplicate attempts as failed.
+- Prepared release v1.3.6 and push/deploy pipeline.

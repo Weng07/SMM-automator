@@ -386,30 +386,20 @@ export default function OrdersPage() {
                 </a>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {order.services_ordered.map((service, index) => {
+                  {order.services_ordered
+                    .filter((service) => !service.skipped)
+                    .map((service, index) => {
                     const isFailure = Boolean(service.error && !service.skipped);
-                    const isSkipped = Boolean(service.skipped);
-                    const hasDebugTrace =
-                      Array.isArray(service.debug_detected_categories) ||
-                      Array.isArray(service.debug_effective_categories) ||
-                      Boolean(service.debug_slot_decision);
-
-                    const detected = (service.debug_detected_categories ?? []).join("|");
-                    const effective = (service.debug_effective_categories ?? []).join("|");
-                    const debugTrace = hasDebugTrace
-                      ? ` · dbg: detected=[${detected || "none"}] effective=[${effective || "none"}] decision=${service.debug_slot_decision ?? "n/a"}`
-                      : "";
 
                     return (
                       <span
                         key={index}
-                        className={`badge ${isFailure ? "badge-err" : isSkipped ? "badge-warn" : "badge-ok"}`}
+                        className={`badge ${isFailure ? "badge-err" : "badge-ok"}`}
                         title={service.error}
                       >
                         {service.error && <AlertTriangle size={11} />}
-                        {service.service_type}: {service.quantity}
+                        {service.service_type} · {service.quantity}
                         {service.provider_name ? ` · ${service.provider_name}` : ""}
-                        {debugTrace}
                       </span>
                     );
                   })}
