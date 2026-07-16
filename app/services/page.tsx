@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PLATFORM_META, PLATFORMS, PlatformKey } from "@/lib/platform-meta";
-import { X_COMMENT_CATEGORIES } from "@/lib/comment-categories";
-import { RefreshCw, Search, ServerCog } from "lucide-react";
+import { Plus, RefreshCw, Search, ServerCog, Trash2 } from "lucide-react";
 
 type Provider = {
   id: string;
@@ -25,71 +24,55 @@ type PanelService = {
 type Preset = {
   id: string;
   platform: string;
-  tier: string;
   service_type: string;
+  slot_index: number;
   api_provider_id: string | null;
   panel_service_id: string | null;
-  socpanel_service_id: string | null;
   quantity: number;
-  comment_categories?: string[] | null;
+  keywords?: string[] | null;
   enabled: boolean;
 };
 
 type DraftPreset = {
   api_provider_id: string | null;
   panel_service_id: string | null;
-  socpanel_service_id: string | null;
   quantity: number;
-  comment_categories: string[];
+  keywords: string[];
+  keyword_input: string;
   enabled: boolean;
 };
 
-const TIERS = ["priority", "regular"];
-
-const DEFAULT_SERVICE_TYPES: Record<string, Record<string, string[]>> = {
-  regular: {
-    x: ["views", "likes", "retweets"],
-    instagram: ["views", "likes", "shares"],
-    tiktok: ["views", "likes", "shares"],
-    linkedin: ["likes", "comments", "shares"],
-    youtube: ["views", "likes", "subscribers"],
-  },
-  priority: {
-    x: ["views", "likes", "retweets", "comments_slot_1", "comments_slot_2"],
-    instagram: ["views", "likes", "comments", "shares"],
-    tiktok: ["views", "likes", "shares", "comments"],
-    linkedin: ["likes", "comments", "shares"],
-    youtube: ["views", "likes", "comments", "subscribers"],
-  },
+const DEFAULT_SERVICE_TYPES: Record<string, string[]> = {
+  x: ["views", "likes", "retweets", "comments"],
+  instagram: ["views", "likes", "comments", "shares"],
+  tiktok: ["views", "likes", "comments", "shares"],
+  linkedin: ["likes", "comments", "shares"],
+  youtube: ["views", "likes", "comments", "subscribers"],
 };
 
-function isCommentSlot(serviceType: string) {
-  return serviceType.startsWith("comments_slot_");
+function makeRowKey(serviceType: string, slotIndex: number) {
+  return `${serviceType}:${slotIndex}`;
 }
 
-function serviceTypeLabel(serviceType: string) {
-  if (!isCommentSlot(serviceType)) {
-    return serviceType;
-  }
-
-  const slot = serviceType.replace("comments_slot_", "");
-  return `comments slot ${slot}`;
+function parseKeywordsInput(input: string) {
+  return [...new Set(
+    input
+      .split(/[\n,]/)
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean)
+  )];
 }
 
-function toggleCategorySelection(current: string[], category: string) {
-  if (current.includes(category)) {
-    return current.filter((item) => item !== category);
+function normalizeKeywords(keywords: string[] | null | undefined) {
+  if (!Array.isArray(keywords) || keywords.length === 0) {
+    return [];
   }
 
-  if (current.length >= 3) {
-    return current;
-  }
-
-  return [...current, category];
-}
-
-function makeRowKey(tier: string, serviceType: string) {
-  return `${tier}:${serviceType}`;
+  return [...new Set(
+    keywords
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean)
+  )];
 }
 
 export default function ServicesPage() {
@@ -99,6 +82,7 @@ export default function ServicesPage() {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [platform, setPlatform] = useState<PlatformKey>("x");
   const [loadingServices, setLoadingServices] = useState(false);
+  const [syncingSlots, setSyncingSlots] = useState(false);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [editingRows, setEditingRows] = useState<Record<string, DraftPreset>>({});
@@ -138,8 +122,8 @@ export default function ServicesPage() {
       }
 
       setPanelServices(data.services ?? []);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Unexpected error.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unexpected error.");
     } finally {
       setLoadingServices(false);
     }
@@ -151,34 +135,67 @@ export default function ServicesPage() {
     void loadPresets();
   }, [loadPresets, loadProviders]);
 
-  function getPreset(tier: string, serviceType: string): Preset | undefined {
+  function getPreset(serviceType: string, slotIndex: number): Preset | undefined {
     return presets.find(
       (preset) =>
         preset.platform === platform &&
-        preset.tier === tier &&
-        preset.service_type === serviceType
+        preset.service_type === serviceType &&
+        Number(preset.slot_index) === slotIndex
     );
   }
 
+  function getPresetsForType(serviceType: string): Preset[] {
+    return presets
+      .filter(
+        (preset) =>
+          preset.platform === platform &&
+          preset.service_type === serviceType
+      )
+      .sort((a, b) => Number(a.slot_index) - Number(b.slot_index));
+  }
+
   function createDraftFromPreset(preset?: Preset): DraftPreset {
-    const savedServiceId =
-      preset?.panel_service_id ?? preset?.socpanel_service_id ?? null;
+    const savedServiceId = preset?.panel_service_id ?? null;
 
     return {
       api_provider_id: preset?.api_provider_id ?? providerId ?? null,
       panel_service_id: savedServiceId,
-      socpanel_service_id: savedServiceId,
       quantity: preset?.quantity ?? 0,
-      comment_categories: Array.isArray(preset?.comment_categories)
-        ? preset.comment_categories
-        : [],
+      keywords: normalizeKeywords(preset?.keywords),
+      keyword_input: "",
       enabled: preset?.enabled ?? true,
     };
   }
 
-  function startEdit(tier: string, serviceType: string) {
-    const key = makeRowKey(tier, serviceType);
-    const preset = getPreset(tier, serviceType);
+  function addKeywordsToDraft(serviceType: string, slotIndex: number, rawInput: string) {
+    const nextKeywords = parseKeywordsInput(rawInput);
+
+    if (nextKeywords.length === 0) {
+      return;
+    }
+
+    const preset = getPreset(serviceType, slotIndex);
+    const key = makeRowKey(serviceType, slotIndex);
+    const currentDraft = editingRows[key] ?? createDraftFromPreset(preset);
+
+    updateDraft(serviceType, slotIndex, {
+      keywords: [...new Set([...currentDraft.keywords, ...nextKeywords])],
+    });
+  }
+
+  function removeKeywordFromDraft(serviceType: string, slotIndex: number, keyword: string) {
+    const preset = getPreset(serviceType, slotIndex);
+    const key = makeRowKey(serviceType, slotIndex);
+    const currentDraft = editingRows[key] ?? createDraftFromPreset(preset);
+
+    updateDraft(serviceType, slotIndex, {
+      keywords: currentDraft.keywords.filter((item) => item !== keyword),
+    });
+  }
+
+  function startEdit(serviceType: string, slotIndex: number) {
+    const key = makeRowKey(serviceType, slotIndex);
+    const preset = getPreset(serviceType, slotIndex);
 
     setEditingRows((current) => ({
       ...current,
@@ -186,8 +203,19 @@ export default function ServicesPage() {
     }));
   }
 
-  function cancelEdit(tier: string, serviceType: string) {
-    const key = makeRowKey(tier, serviceType);
+  function addSlot(serviceType: string) {
+    const savedSlots = getPresetsForType(serviceType).map((preset) => Number(preset.slot_index));
+    const editingSlots = Object.keys(editingRows)
+      .filter((key) => key.startsWith(`${serviceType}:`))
+      .map((key) => Number(key.split(":")[1]))
+      .filter((value) => Number.isFinite(value));
+
+    const maxSlot = Math.max(0, ...savedSlots, ...editingSlots);
+    startEdit(serviceType, maxSlot + 1);
+  }
+
+  function cancelEdit(serviceType: string, slotIndex: number) {
+    const key = makeRowKey(serviceType, slotIndex);
 
     setEditingRows((current) => {
       const next = { ...current };
@@ -197,43 +225,45 @@ export default function ServicesPage() {
   }
 
   function updateDraft(
-    tier: string,
     serviceType: string,
+    slotIndex: number,
     updates: Partial<DraftPreset>
   ) {
-    const key = makeRowKey(tier, serviceType);
-    const preset = getPreset(tier, serviceType);
-    const currentDraft = editingRows[key] ?? createDraftFromPreset(preset);
+    const key = makeRowKey(serviceType, slotIndex);
+    const preset = getPreset(serviceType, slotIndex);
 
-    setEditingRows((current) => ({
-      ...current,
-      [key]: {
-        ...currentDraft,
-        ...updates,
-      },
-    }));
+    setEditingRows((current) => {
+      const currentDraft =
+        current[key] ?? createDraftFromPreset(preset);
+
+      return {
+        ...current,
+        [key]: {
+          ...currentDraft,
+          ...updates,
+        },
+      };
+    });
   }
 
-  async function saveDraft(tier: string, serviceType: string) {
-    const key = makeRowKey(tier, serviceType);
+  async function saveDraft(serviceType: string, slotIndex: number) {
+    const key = makeRowKey(serviceType, slotIndex);
     const draft = editingRows[key];
 
     if (!draft) {
       return;
     }
 
-    const selectedServiceId =
-      draft.panel_service_id ?? draft.socpanel_service_id ?? null;
+    const selectedServiceId = draft.panel_service_id ?? null;
 
     const body = {
       platform,
-      tier,
       service_type: serviceType,
+      slot_index: slotIndex,
       api_provider_id: draft.api_provider_id ?? providerId ?? null,
       panel_service_id: selectedServiceId,
-      socpanel_service_id: selectedServiceId,
       quantity: draft.quantity,
-      comment_categories: draft.comment_categories,
+      keywords: draft.keywords,
       enabled: draft.enabled,
     };
 
@@ -250,8 +280,46 @@ export default function ServicesPage() {
       return;
     }
 
-    cancelEdit(tier, serviceType);
+    cancelEdit(serviceType, slotIndex);
     await loadPresets();
+  }
+
+  async function deletePreset(id: string) {
+    const res = await fetch(`/api/service-presets?id=${id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setError(data.error ?? "Failed to delete slot.");
+      return;
+    }
+
+    await loadPresets();
+  }
+
+  async function syncSlots() {
+    setSyncingSlots(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/service-presets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to sync slot numbering.");
+      }
+
+      setEditingRows({});
+      await loadPresets();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to sync slot numbering.");
+    } finally {
+      setSyncingSlots(false);
+    }
   }
 
   const activeProvider = providers.find((provider) => provider.id === providerId);
@@ -283,17 +351,17 @@ export default function ServicesPage() {
       .slice(0, 250);
   }, [panelServices, search]);
 
+  const serviceTypes = DEFAULT_SERVICE_TYPES[platform] ?? [];
+
   return (
     <div className="flex flex-col gap-7">
       <section className="panel" style={{ padding: "22px" }}>
         <div className="flex flex-col gap-2">
           <span className="eyebrow">Service routing</span>
-          <h1 className="display text-2xl font-semibold tracking-tight">
-            Provider map
-          </h1>
+          <h1 className="display text-2xl font-semibold tracking-tight">Provider slots</h1>
           <p className="text-sm text-[#9aa3c7] max-w-2xl">
-            Connect any SMM-panel-style API, pull its catalog, search by service
-            ID or keyword, then map each tier to the exact service.
+            Configure one or more slots per service type. If multiple slots match a link keyword,
+            the system shuffles between those slots automatically.
           </p>
         </div>
       </section>
@@ -302,7 +370,7 @@ export default function ServicesPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto",
+            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto auto",
             gap: "14px",
             alignItems: "end",
           }}
@@ -351,6 +419,16 @@ export default function ServicesPage() {
             />
             {loadingServices ? "Pulling..." : "Pull services"}
           </button>
+
+          <button
+            className="btn-secondary flex items-center gap-2"
+            style={{ minHeight: "48px", whiteSpace: "nowrap" }}
+            onClick={syncSlots}
+            disabled={syncingSlots}
+          >
+            <RefreshCw size={14} className={syncingSlots ? "animate-spin" : ""} />
+            {syncingSlots ? "Syncing..." : "Sync slots"}
+          </button>
         </div>
 
         <div className="flex items-center gap-2 text-xs text-[#7f89b2]">
@@ -387,190 +465,244 @@ export default function ServicesPage() {
 
       {error && <div className="panel-error">{error}</div>}
 
-      {TIERS.map((tier) => {
-        const serviceTypes = DEFAULT_SERVICE_TYPES[tier]?.[platform] ?? [];
+      <div className="panel" style={{ padding: "22px" }}>
+        <div className="flex flex-col gap-4">
+          {serviceTypes.map((serviceType) => {
+            const savedPresets = getPresetsForType(serviceType);
+            const editingSlots = Object.keys(editingRows)
+              .filter((key) => key.startsWith(`${serviceType}:`))
+              .map((key) => Number(key.split(":")[1]))
+              .filter((slot) => Number.isFinite(slot));
 
-        return (
-          <div key={tier} className="panel" style={{ padding: "22px" }}>
-            <div className="flex items-center gap-2 mb-4">
-              <span
-                className={`badge ${
-                  tier === "priority" ? "badge-priority" : "badge-regular"
-                }`}
-              >
-                {tier}
-              </span>
-              <span className="text-sm text-[#8b8fa3]">
-                for {PLATFORM_META[platform].label}
-              </span>
-            </div>
+            const slotIndexes = [...new Set([
+              ...savedPresets.map((preset) => Number(preset.slot_index)),
+              ...editingSlots,
+            ])].sort((a, b) => a - b);
 
-            <div className="flex flex-col gap-3">
-              {serviceTypes.map((serviceType) => {
-                const rowKey = makeRowKey(tier, serviceType);
-                const preset = getPreset(tier, serviceType);
-                const isEditing = Boolean(editingRows[rowKey]);
-                const draft =
-                  editingRows[rowKey] ?? createDraftFromPreset(preset);
+            return (
+              <div key={serviceType} className="flex flex-col gap-3 border border-[#23272e] rounded-xl p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold capitalize">{serviceType}</div>
+                  <button
+                    type="button"
+                    className="btn-secondary flex items-center gap-2"
+                    onClick={() => addSlot(serviceType)}
+                  >
+                    <Plus size={14} />
+                    Add slot
+                  </button>
+                </div>
 
-                const savedServiceId =
-                  preset?.panel_service_id ?? preset?.socpanel_service_id ?? "";
+                {slotIndexes.length === 0 && (
+                  <div className="text-xs text-[#8b8fa3]">No slots yet for this service type.</div>
+                )}
 
-                const draftServiceId =
-                  draft.panel_service_id ?? draft.socpanel_service_id ?? "";
+                {slotIndexes.map((slotIndex) => {
+                  const rowKey = makeRowKey(serviceType, slotIndex);
+                  const preset = getPreset(serviceType, slotIndex);
+                  const isEditing = Boolean(editingRows[rowKey]);
+                  const draft = editingRows[rowKey] ?? createDraftFromPreset(preset);
 
-                const currentServiceId = isEditing
-                  ? draftServiceId
-                  : savedServiceId;
+                  const savedServiceId = preset?.panel_service_id ?? "";
+                  const currentServiceId = draft.panel_service_id ?? "";
 
-                const currentMissingFromCatalog =
-                  currentServiceId &&
-                  !filteredServices.some(
-                    (service) => service.service === currentServiceId
-                  );
+                  const activeServiceId = isEditing ? currentServiceId : savedServiceId;
 
-                return (
-                  <div
-                    key={serviceType}
-                    className="service-row"
-                    onKeyDown={(e) => {
+                  const currentMissingFromCatalog =
+                    activeServiceId &&
+                    !filteredServices.some((service) => service.service === activeServiceId);
+
+                  return (
+                    <div key={rowKey} className="service-row" onKeyDown={(e) => {
                       if (e.key === "Enter" && isEditing) {
                         e.preventDefault();
-                        saveDraft(tier, serviceType);
+                        saveDraft(serviceType, slotIndex);
                       }
-                    }}
-                  >
-                    <div className="text-sm capitalize font-medium">
-                      {serviceTypeLabel(serviceType)}
-                    </div>
+                    }}>
+                      <div className="text-sm font-medium">Slot {slotIndex}</div>
 
-                    <select
-                      className="input"
-                      value={currentServiceId}
-                      disabled={!isEditing}
-                      onChange={(e) => {
-                        const value = e.target.value || null;
+                      <select
+                        className="input"
+                        value={activeServiceId}
+                        disabled={!isEditing}
+                        onChange={(e) => {
+                          const value = e.target.value || null;
 
-                        updateDraft(tier, serviceType, {
-                          api_provider_id: providerId || preset?.api_provider_id || null,
-                          panel_service_id: value,
-                          socpanel_service_id: value,
-                        });
-                      }}
-                    >
-                      <option value="">Select provider service</option>
-
-                      {currentMissingFromCatalog && (
-                        <option value={currentServiceId}>
-                          [{currentServiceId}] Currently saved service
-                        </option>
-                      )}
-
-                      {filteredServices.map((service) => (
-                        <option key={service.service} value={service.service}>
-                          [{service.service}] {service.name}
-                        </option>
-                      ))}
-                    </select>
-
-                    <input
-                      type="number"
-                      min={0}
-                      className="input"
-                      value={isEditing ? draft.quantity : preset?.quantity ?? 0}
-                      disabled={!isEditing}
-                      onChange={(e) =>
-                        updateDraft(tier, serviceType, {
-                          quantity: Number(e.target.value),
-                        })
-                      }
-                    />
-
-                    {isCommentSlot(serviceType) && tier === "priority" && platform === "x" && (
-                      <div
-                        className="flex flex-wrap gap-2"
-                        aria-label="Comment categories"
+                          updateDraft(serviceType, slotIndex, {
+                            api_provider_id: providerId || preset?.api_provider_id || null,
+                            panel_service_id: value,
+                          });
+                        }}
                       >
-                        {X_COMMENT_CATEGORIES.map((category) => {
-                          const selectedCategories = isEditing
-                            ? draft.comment_categories
-                            : preset?.comment_categories ?? [];
-                          const active = selectedCategories.includes(category);
+                        <option value="">Select provider service</option>
 
-                          return (
-                            <button
-                              key={category}
-                              type="button"
-                              className={`platform-pill ${active ? "active" : ""}`}
-                              disabled={!isEditing}
-                              onClick={() => {
-                                const next = toggleCategorySelection(
-                                  draft.comment_categories,
-                                  category
-                                );
+                        {currentMissingFromCatalog && (
+                          <option value={activeServiceId}>
+                            [{activeServiceId}] Currently saved service
+                          </option>
+                        )}
 
-                                updateDraft(tier, serviceType, {
-                                  comment_categories: next,
-                                });
-                              }}
-                            >
-                              {category}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                        {filteredServices.map((service) => (
+                          <option key={service.service} value={service.service}>
+                            [{service.service}] {service.name}
+                          </option>
+                        ))}
+                      </select>
 
-                    <label className="toggle-label">
                       <input
-                        type="checkbox"
-                        checked={isEditing ? draft.enabled : preset?.enabled ?? true}
+                        type="number"
+                        min={0}
+                        className="input"
+                        value={isEditing ? draft.quantity : preset?.quantity ?? 0}
                         disabled={!isEditing}
                         onChange={(e) =>
-                          updateDraft(tier, serviceType, {
-                            enabled: e.target.checked,
+                          updateDraft(serviceType, slotIndex, {
+                            quantity: Number(e.target.value),
                           })
                         }
                       />
-                      on
-                    </label>
 
-                    <div className="flex items-center gap-2">
-                      {!isEditing ? (
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={() => startEdit(tier, serviceType)}
+                      <div className="flex flex-col gap-2">
+                        {isEditing ? (
+                          <input
+                            className="input service-keyword-input"
+                            style={{ transform: "translateY(46px)" }}
+                            placeholder="Type keywords separated by commas, then press Enter"
+                            value={draft.keyword_input}
+                            onChange={(e) => {
+                              updateDraft(serviceType, slotIndex, {
+                                keyword_input: e.target.value,
+                              });
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                e.stopPropagation();
+
+                                addKeywordsToDraft(serviceType, slotIndex, draft.keyword_input);
+                                updateDraft(serviceType, slotIndex, { keyword_input: "" });
+                              }
+                            }}
+                          />
+                        ) : (
+                          <input
+                            className="input service-keyword-input"
+                            value=""
+                            placeholder=""
+                            style={{ transform: "translateY(46px)" }}
+                            disabled
+                            readOnly
+                          />
+                        )}
+
+                        <div
+                          className={`min-h-[36px] flex flex-nowrap gap-2 ${
+                            (isEditing ? draft.keywords : normalizeKeywords(preset?.keywords)).length === 0
+                              ? "invisible"
+                              : ""
+                          }`}
+                          style={{
+                            transform: "translateY(20px)",
+                            width: "max-content",
+                            alignSelf: "flex-end",
+                          }}
                         >
-                          Edit
-                        </button>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            onClick={() => saveDraft(tier, serviceType)}
-                          >
-                            Save
-                          </button>
+                          {(isEditing ? draft.keywords : normalizeKeywords(preset?.keywords)).map((keyword) => (
+                            <span
+                              key={keyword}
+                              className="platform-pill active keyword-pill"
+                              style={{ cursor: isEditing ? "default" : "text" }}
+                            >
+                              {keyword}
+                              {isEditing && (
+                                <button
+                                  type="button"
+                                  className="ml-2 text-xs p-0 leading-none"
+                                  style={{
+                                    padding: 0,
+                                    marginLeft: "8px",
+                                    width: "auto",
+                                    minWidth: 0,
+                                    height: "auto",
+                                    minHeight: 0,
+                                    border: 0,
+                                    background: "transparent",
+                                    lineHeight: 1,
+                                  }}
+                                  onClick={() => removeKeywordFromDraft(serviceType, slotIndex, keyword)}
+                                  aria-label={`Remove ${keyword}`}
+                                  
+                                >
+                                  x
+                                </button>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
 
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            onClick={() => cancelEdit(tier, serviceType)}
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      )}
+                      <label className="toggle-label">
+                        <input
+                          type="checkbox"
+                          checked={isEditing ? draft.enabled : preset?.enabled ?? true}
+                          disabled={!isEditing}
+                          onChange={(e) =>
+                            updateDraft(serviceType, slotIndex, {
+                              enabled: e.target.checked,
+                            })
+                          }
+                        />
+                        on
+                      </label>
+
+                      <div className="flex items-center gap-2">
+                        {!isEditing ? (
+                          <>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              onClick={() => startEdit(serviceType, slotIndex)}
+                            >
+                              Edit
+                            </button>
+                            {preset?.id && (
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => deletePreset(preset.id)}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              onClick={() => saveDraft(serviceType, slotIndex)}
+                            >
+                              Save
+                            </button>
+
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              onClick={() => cancelEdit(serviceType, slotIndex)}
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

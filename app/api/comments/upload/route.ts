@@ -3,7 +3,6 @@ import Papa from "papaparse";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import { supabaseAdmin } from "@/lib/supabase";
-import { isXCommentCategory } from "@/lib/comment-categories";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -170,9 +169,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "platform is required." }, { status: 400 });
     }
 
-    if (platform === "x" && (!category || !isXCommentCategory(category))) {
+    if (platform === "x" && !category) {
       return NextResponse.json(
-        { error: "X comment category is required and must be litho, thanos, or ignite." },
+        { error: "X comment category is required." },
         { status: 400 }
       );
     }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X_COMMENT_CATEGORIES } from "@/lib/comment-categories";
 
 type Pool = {
   id: string;
@@ -66,7 +65,10 @@ export default function AccountsPage() {
       return false;
     }
 
-    if (xCommentCategory && pool.category !== xCommentCategory) {
+    if (
+      xCommentCategory &&
+      !(pool.category ?? "").toLowerCase().includes(xCommentCategory.toLowerCase())
+    ) {
       return false;
     }
 
@@ -130,20 +132,14 @@ export default function AccountsPage() {
             </select>
           </div>
           <div>
-            <label className="text-xs text-[#8b929c] block mb-1">X comment category</label>
-            <select
+            <label className="text-xs text-[#8b929c] block mb-1">X comment category filter</label>
+            <input
               className="input"
+              placeholder="Optional keyword/category"
               value={xCommentCategory}
               onChange={(e) => setXCommentCategory(e.target.value)}
               disabled={tier !== "priority"}
-            >
-              <option value="">all categories</option>
-              {X_COMMENT_CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
+            />
           </div>
           <div>
             <label className="text-xs text-[#8b929c] block mb-1">Comment pool</label>

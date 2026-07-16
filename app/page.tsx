@@ -88,7 +88,6 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const [tier, setTier] = useState("regular");
   const [links, setLinks] = useState("");
 
   const linkList = useMemo(() => parseOrderLinks(links), [links]);
@@ -163,7 +162,6 @@ export default function OverviewPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tier,
           links,
         }),
       });
@@ -284,17 +282,6 @@ export default function OverviewPage() {
               })}
             </div>
           </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="field-label">Tier</label>
-            <select className="input" value={tier} onChange={(e) => setTier(e.target.value)}>
-              <option value="priority">priority</option>
-              <option value="regular">regular</option>
-            </select>
-          </div>
-        </div>
-
         <div>
           <label className="field-label">Post links</label>
           <textarea

@@ -2,3 +2,10 @@
 - Simplified Orders service badges: hide skipped traces and show compact format (service · qty · panel).
 - Updated duplicate handling message to exactly "Duplicate order" and keep duplicate attempts as failed.
 - Prepared release v1.3.6 and push/deploy pipeline.
+
+2026-07-17
+- Replaced tier-based service mapping with slot-based routing and free-text keyword matching.
+- Added deterministic shuffle for duplicate keyword-matched slots and default-slot behavior for unmatched links.
+- Added Services "Sync slots" action and backend slot normalization endpoint for contiguous slot numbering.
+- Updated keyword input UX: comma is separator, Enter commits split keywords.
+- Added provider-agnostic schema migration `supabase/migrations/0001_provider_agnostic_slots.sql` and updated setup docs.

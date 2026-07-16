@@ -291,6 +291,7 @@ body::before {
   font-size: 13px;
   font-weight: 600;
   transition: all 0.15s ease;
+  text-transform: uppercase;
 }
 
 .platform-pill.active {
@@ -309,6 +310,13 @@ body::before {
   color: var(--text);
 }
 
+.keyword-pill {
+  padding: 5px 9px;
+  gap: 5px;
+  font-size: 11px;
+  border-radius: 10px;
+}
+
 .service-row {
   display: grid;
   grid-template-columns: 110px 1fr 120px 180px 64px;
@@ -318,6 +326,11 @@ body::before {
   border: 1px solid rgba(148, 163, 184, 0.1);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.025);
+}
+
+/* Gap is controlled from the input itself, not the keyword list. */
+.service-keyword-input {
+  margin-bottom: 56px;
 }
 
 .toggle-label {

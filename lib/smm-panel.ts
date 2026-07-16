@@ -1,7 +1,5 @@
 import { supabaseAdmin } from "./supabase";
 
-const DEFAULT_API_URL = "https://socpanel.com/api/v2";
-
 export type ApiProvider = {
   id: string;
   name: string;
@@ -134,7 +132,7 @@ async function getProvider(providerId?: string | null) {
       id: data.id as string,
       name: data.name as string,
       apiKey: data.api_key as string,
-      apiUrl: (data.api_url as string) || DEFAULT_API_URL,
+      apiUrl: data.api_url as string,
     };
   }
 
@@ -147,30 +145,38 @@ async function getProvider(providerId?: string | null) {
     .maybeSingle();
 
   if (provider?.api_key) {
+    if (!provider.api_url) {
+      throw new Error(`${provider.name} API URL is not configured.`);
+    }
+
     return {
       id: provider.id as string,
       name: provider.name as string,
       apiKey: provider.api_key as string,
-      apiUrl: (provider.api_url as string) || DEFAULT_API_URL,
+      apiUrl: provider.api_url as string,
     };
   }
 
   // Backwards compatible fallback for old installs that only have app_settings.
   const { data, error } = await supabase
     .from("app_settings")
-    .select("socpanel_api_key, socpanel_api_url")
+    .select("api_key, api_url")
     .eq("id", 1)
     .single();
 
-  if (error || !data?.socpanel_api_key) {
+  if (error || !data?.api_key) {
     throw new Error("No API provider is configured. Add one in Settings first.");
+  }
+
+  if (!data.api_url) {
+    throw new Error("Legacy app_settings API URL is missing. Add a provider in Settings.");
   }
 
   return {
     id: null,
-    name: "SocPanel",
-    apiKey: data.socpanel_api_key as string,
-    apiUrl: (data.socpanel_api_url as string) || DEFAULT_API_URL,
+    name: "Legacy provider",
+    apiKey: data.api_key as string,
+    apiUrl: data.api_url as string,
   };
 }
 

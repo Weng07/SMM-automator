@@ -44,8 +44,9 @@ differs, only `lib/socpanel.ts` needs editing.
 ### 1. Supabase
 
 1. Create a new Supabase project.
-2. Open the SQL editor and run `supabase/schema.sql`.
-3. Copy your Project URL and `service_role` key (Project Settings → API).
+2. For first-time setup, open the SQL editor and run `supabase/schema.sql`.
+3. For upgrades, run files in `supabase/migrations/` in ascending order using this repo's own numbering (e.g. `0001_...sql`, `0002_...sql`).
+4. Copy your Project URL and `service_role` key (Project Settings → API).
 
 ### 2. Environment variables
 
@@ -104,7 +105,7 @@ This build adds:
 
 ### Required database update
 
-Run the full `supabase/schema.sql` again in Supabase SQL Editor. It is written to be migration-friendly and will add the new `api_providers`, `api_provider_id`, and `panel_service_id` fields without deleting existing orders.
+Run the next file from `supabase/migrations/` in order (for this repo, start with `0001_provider_agnostic_slots.sql`).
 
 ### How to use
 

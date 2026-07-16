@@ -1,12 +1,12 @@
 import { supabaseAdmin } from "./supabase";
 import { placePanelOrder } from "./smm-panel";
-import { isXCommentCategory } from "./comment-categories";
 
 type Platform = "x" | "instagram" | "tiktok" | "linkedin" | "youtube";
-type Tier = "priority" | "regular";
 
 type ServiceResult = {
   service_type: string;
+  slot_index?: number;
+  keywords?: string[];
   api_provider_id?: string | null;
   provider_name?: string | null;
   panel_service_id: string | null;
@@ -79,13 +79,13 @@ async function findOldestAvailablePool(platform: Platform) {
 }
 
 function isCommentServiceType(serviceType: string) {
-  return serviceType === "comments" || serviceType.startsWith("comments_slot_");
+  return serviceType === "comments";
 }
 
 function normalizeServiceCategory(serviceType: string): string {
   const normalized = serviceType.trim().toLowerCase();
 
-  if (normalized === "comments" || normalized.startsWith("comments_slot_")) {
+  if (normalized === "comments") {
     return "comments";
   }
 
@@ -97,59 +97,59 @@ function normalizeServiceCategory(serviceType: string): string {
   return normalized;
 }
 
-function shouldSubmitComments(params: { platform: Platform; tier: Tier }) {
-  return params.tier === "priority" || params.platform === "linkedin";
+function shouldSubmitComments(params: { platform: Platform; tier: string }) {
+  return Boolean(params.platform);
 }
 
-function normalizeCommentCategories(value: unknown): string[] {
+function normalizeKeywords(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  return value
+  return [...new Set(value
     .map((item) => String(item).trim().toLowerCase())
-    .filter((item): item is string => isXCommentCategory(item));
+    .filter(Boolean))];
 }
 
-function inferXCommentCategoriesFromLink(link: string): string[] {
-  const normalized = link.toLowerCase();
-  const categories = ["litho", "ignite", "thanos"];
-
-  return categories.filter((category) => normalized.includes(category));
+function extractDetectedKeywordsFromLink(link: string): string[] {
+  const normalized = decodeURIComponent(link).toLowerCase();
+  const matches = normalized.match(/[a-z0-9_\-]+/g) ?? [];
+  return [...new Set(matches.filter(Boolean))];
 }
 
-function resolveCommentCategories(params: {
-  platform: Platform;
-  link: string;
-  presetCategories: string[];
+function matchesAnyKeyword(link: string, keywords: string[]) {
+  if (keywords.length === 0) {
+    return false;
+  }
+
+  const normalizedLink = decodeURIComponent(link).toLowerCase();
+  return keywords.some((keyword) => normalizedLink.includes(keyword));
+}
+
+function hashString(input: string): number {
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function pickShuffledSlot<T extends { slot_index?: number }>(params: {
+  candidates: T[];
+  seed: string;
 }) {
-  const presetCategories = [...new Set(params.presetCategories)];
-
-  if (params.platform !== "x") {
-    return { categories: presetCategories, shouldSkip: false as const };
+  if (params.candidates.length <= 1) {
+    return params.candidates[0] ?? null;
   }
 
-  const inferredFromLink = inferXCommentCategoriesFromLink(params.link);
-
-  if (inferredFromLink.length === 0) {
-    return { categories: presetCategories, shouldSkip: false as const };
-  }
-
-  if (presetCategories.length === 0) {
-    return { categories: inferredFromLink, shouldSkip: false as const };
-  }
-
-  const intersection = presetCategories.filter((category) =>
-    inferredFromLink.includes(category)
+  // Keep ordering stable so hash modulo maps consistently over time.
+  const ordered = [...params.candidates].sort(
+    (a, b) => (a.slot_index ?? 1) - (b.slot_index ?? 1)
   );
-
-  if (intersection.length > 0) {
-    return { categories: intersection, shouldSkip: false as const };
-  }
-
-  // Keyword was detected on the link, but this slot is configured for
-  // different categories, so skip this slot entirely.
-  return { categories: presetCategories, shouldSkip: true as const };
+  // Deterministic distribution: same seed => same slot, different seeds spread across slots.
+  const pick = hashString(params.seed) % ordered.length;
+  return ordered[pick] ?? null;
 }
 
 async function findOldestAvailablePoolForCategories(params: {
@@ -253,7 +253,7 @@ export async function retryOrderForId(orderId: string) {
 
   return submitOrderForLink({
     platform: orderRow.platform as Platform,
-    tier: orderRow.tier as Tier,
+    tier: orderRow.tier,
     link: orderRow.link,
     source: orderRow.source ?? "retry",
     commentPoolId: orderRow.comment_pool_id ?? null,
@@ -262,7 +262,7 @@ export async function retryOrderForId(orderId: string) {
 
 export async function submitOrderForLink(params: {
   platform: Platform;
-  tier: Tier;
+  tier?: string;
   link: string;
   source?: string;
   commentPoolId?: string | null;
@@ -291,14 +291,13 @@ export async function submitOrderForLink(params: {
     .from("service_presets")
     .select("*, api_providers(name)")
     .eq("platform", params.platform)
-    .eq("tier", params.tier)
     .eq("enabled", true);
 
   if (presetErr) throw presetErr;
 
   if (!presets || presets.length === 0) {
     throw new Error(
-      `No enabled service presets found for ${params.platform}/${params.tier}. Configure them in Services first.`
+      `No enabled service presets found for ${params.platform}. Configure them in Services first.`
     );
   }
 
@@ -327,7 +326,7 @@ export async function submitOrderForLink(params: {
     .from("orders")
     .insert({
       platform: params.platform,
-      tier: params.tier,
+      tier: params.tier ?? "regular",
       link: params.link,
       source: params.source ?? "manual",
       status: "pending",
@@ -340,8 +339,7 @@ export async function submitOrderForLink(params: {
   if (orderErr) throw orderErr;
 
   const results: ServiceResult[] = [];
-  const detectedLinkCategories =
-    params.platform === "x" ? inferXCommentCategoriesFromLink(params.link) : [];
+  const detectedKeywords = extractDetectedKeywordsFromLink(params.link);
 
   if (params.platform === "instagram" && !instagramShouldOrderViews) {
     results.push({
@@ -354,26 +352,65 @@ export async function submitOrderForLink(params: {
     });
   }
 
+  const groupedPresets = new Map<string, Array<Record<string, unknown>>>();
+
   for (const preset of filteredPresets) {
-    if (
-      params.platform === "x" &&
-      params.tier === "priority" &&
-      preset.service_type === "comments"
-    ) {
-      results.push({
-        service_type: preset.service_type,
-        api_provider_id: preset.api_provider_id ?? null,
-        provider_name: preset.api_providers?.name ?? "Provider",
-        panel_service_id: preset.panel_service_id || preset.socpanel_service_id,
-        socpanel_service_id: preset.panel_service_id || preset.socpanel_service_id,
-        quantity: preset.quantity,
-        skipped: true,
-        error: "Legacy comments preset skipped. Use comments slot 1/2 in Services.",
-      });
+    const serviceType = String(preset.service_type);
+    const existing = groupedPresets.get(serviceType) ?? [];
+    existing.push(preset as Record<string, unknown>);
+    groupedPresets.set(serviceType, existing);
+  }
+
+  for (const [serviceType, servicePresets] of groupedPresets.entries()) {
+    // Slots with explicit keywords participate only in keyword matching.
+    const withKeywords = servicePresets.filter((preset) =>
+      normalizeKeywords((preset as { keywords?: unknown; comment_categories?: unknown }).keywords ?? (preset as { comment_categories?: unknown }).comment_categories).length > 0
+    );
+
+    // Match slots whose configured keywords appear in the submitted link.
+    const keywordMatched = withKeywords.filter((preset) =>
+      matchesAnyKeyword(
+        params.link,
+        normalizeKeywords((preset as { keywords?: unknown; comment_categories?: unknown }).keywords ?? (preset as { comment_categories?: unknown }).comment_categories)
+      )
+    );
+
+    // Slots without keywords are default fallback slots for unmatched links.
+    const fallbackSlots = servicePresets.filter((preset) =>
+      normalizeKeywords((preset as { keywords?: unknown; comment_categories?: unknown }).keywords ?? (preset as { comment_categories?: unknown }).comment_categories).length === 0
+    );
+
+    // If multiple keyword slots match, distribute links deterministically via hash.
+    // If no keyword slot matches, use the first fallback slot (lowest slot_index).
+    const selectedPreset = keywordMatched.length > 0
+      ? pickShuffledSlot({
+          candidates: keywordMatched as Array<{ slot_index?: number }>,
+          seed: `${params.platform}:${serviceType}:${params.link}`,
+        }) as Record<string, unknown> | null
+      : ([...fallbackSlots]
+          .sort(
+            (a, b) =>
+              (Number((a as { slot_index?: unknown }).slot_index) || 1) -
+              (Number((b as { slot_index?: unknown }).slot_index) || 1)
+          )[0] as Record<string, unknown> | undefined) ?? null;
+
+    if (!selectedPreset) {
       continue;
     }
 
-    const serviceId = preset.panel_service_id || preset.socpanel_service_id;
+    const preset = selectedPreset as {
+      service_type: string;
+      slot_index?: number;
+      keywords?: unknown;
+      comment_categories?: unknown;
+      api_provider_id?: string | null;
+      api_providers?: { name?: string | null };
+      panel_service_id?: string | null;
+      socpanel_service_id?: string | null;
+      quantity: number;
+    };
+
+    const serviceId = preset.panel_service_id || preset.socpanel_service_id || null;
     const providerId = preset.api_provider_id ?? null;
     const providerName =
       preset.api_providers?.name ?? (providerId ? "Provider" : "Default provider");
@@ -386,7 +423,9 @@ export async function submitOrderForLink(params: {
 
     if (alreadySubmitted) {
       results.push({
-        service_type: preset.service_type,
+        service_type: serviceType,
+        slot_index: preset.slot_index ?? 1,
+        keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
         api_provider_id: providerId,
         provider_name: providerName,
         panel_service_id: serviceId,
@@ -400,7 +439,9 @@ export async function submitOrderForLink(params: {
 
     if (!serviceId) {
       results.push({
-        service_type: preset.service_type,
+        service_type: serviceType,
+        slot_index: preset.slot_index ?? 1,
+        keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
         api_provider_id: providerId,
         provider_name: providerName,
         panel_service_id: null,
@@ -413,50 +454,29 @@ export async function submitOrderForLink(params: {
 
     try {
       let comments: string | undefined;
-      let effectiveCategoriesForResult: string[] | undefined;
+      let effectiveKeywordsForResult: string[] | undefined;
 
-      if (isCommentServiceType(preset.service_type)) {
-        if (!shouldSubmitComments({ platform: params.platform, tier: params.tier })) {
+      if (isCommentServiceType(serviceType)) {
+        if (!shouldSubmitComments({ platform: params.platform, tier: params.tier ?? "regular" })) {
           results.push({
-            service_type: preset.service_type,
+            service_type: serviceType,
+            slot_index: preset.slot_index ?? 1,
+            keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
             api_provider_id: providerId,
             provider_name: providerName,
             panel_service_id: serviceId,
             socpanel_service_id: serviceId,
             quantity: preset.quantity,
             skipped: true,
-            error: "Comments are only submitted in priority mode (except LinkedIn).",
+            error: "Comments are disabled for this platform.",
           });
           continue;
         }
 
-        const selectedCategories = normalizeCommentCategories(
-          (preset as { comment_categories?: unknown }).comment_categories
+        const effectiveKeywords = normalizeKeywords(
+          preset.keywords ?? preset.comment_categories
         );
-        const categoryDecision = resolveCommentCategories({
-          platform: params.platform,
-          link: params.link,
-          presetCategories: selectedCategories,
-        });
-        const effectiveCategories = categoryDecision.categories;
-        effectiveCategoriesForResult = effectiveCategories;
-
-        if (categoryDecision.shouldSkip) {
-          results.push({
-            service_type: preset.service_type,
-            api_provider_id: providerId,
-            provider_name: providerName,
-            panel_service_id: serviceId,
-            socpanel_service_id: serviceId,
-            quantity: 0,
-            skipped: true,
-            error: "Skipped: link keyword maps to a different comment slot category.",
-            debug_detected_categories: detectedLinkCategories,
-            debug_effective_categories: effectiveCategories,
-            debug_slot_decision: "slot_mismatch_skipped",
-          });
-          continue;
-        }
+        effectiveKeywordsForResult = effectiveKeywords;
 
         let poolId = params.commentPoolId ?? null;
 
@@ -469,35 +489,34 @@ export async function submitOrderForLink(params: {
 
           if (poolErr || !poolRow || poolRow.platform !== params.platform) {
             results.push({
-              service_type: preset.service_type,
+              service_type: serviceType,
+              slot_index: preset.slot_index ?? 1,
+              keywords: effectiveKeywords,
               api_provider_id: providerId,
               provider_name: providerName,
               panel_service_id: serviceId,
               socpanel_service_id: serviceId,
               quantity: preset.quantity,
               error: "Selected comment pool is invalid for this platform.",
-              debug_detected_categories: detectedLinkCategories,
-              debug_effective_categories: effectiveCategories,
-              debug_slot_decision: "invalid_manual_pool",
             });
             continue;
           }
 
           if (
-            effectiveCategories.length > 0 &&
-            (!poolRow.category || !effectiveCategories.includes(poolRow.category))
+            effectiveKeywords.length > 0 &&
+            poolRow.category &&
+            !effectiveKeywords.includes(poolRow.category)
           ) {
             results.push({
-              service_type: preset.service_type,
+              service_type: serviceType,
+              slot_index: preset.slot_index ?? 1,
+              keywords: effectiveKeywords,
               api_provider_id: providerId,
               provider_name: providerName,
               panel_service_id: serviceId,
               socpanel_service_id: serviceId,
               quantity: preset.quantity,
               error: `Selected pool category is ${poolRow.category ?? "uncategorized"} and does not match this slot.`,
-              debug_detected_categories: detectedLinkCategories,
-              debug_effective_categories: effectiveCategories,
-              debug_slot_decision: "manual_pool_category_mismatch",
             });
             continue;
           }
@@ -506,26 +525,25 @@ export async function submitOrderForLink(params: {
         if (!poolId) {
           const autoPool = await findOldestAvailablePoolForCategories({
             platform: params.platform,
-            categories: effectiveCategories,
+            categories: effectiveKeywords,
           });
 
           if (!autoPool) {
             const categoryHint =
-              effectiveCategories.length > 0
-                ? ` in categories [${effectiveCategories.join(", ")}]`
+              effectiveKeywords.length > 0
+                ? ` in categories [${effectiveKeywords.join(", ")}]`
                 : "";
 
             results.push({
-              service_type: preset.service_type,
+              service_type: serviceType,
+              slot_index: preset.slot_index ?? 1,
+              keywords: effectiveKeywords,
               api_provider_id: providerId,
               provider_name: providerName,
               panel_service_id: serviceId,
               socpanel_service_id: serviceId,
               quantity: preset.quantity,
               error: `No unused comment pool found for ${params.platform}${categoryHint}.`,
-              debug_detected_categories: detectedLinkCategories,
-              debug_effective_categories: effectiveCategories,
-              debug_slot_decision: "no_pool_found",
             });
             continue;
           }
@@ -537,16 +555,15 @@ export async function submitOrderForLink(params: {
 
         if (picked.length < preset.quantity) {
           results.push({
-            service_type: preset.service_type,
+            service_type: serviceType,
+            slot_index: preset.slot_index ?? 1,
+            keywords: effectiveKeywords,
             api_provider_id: providerId,
             provider_name: providerName,
             panel_service_id: serviceId,
             socpanel_service_id: serviceId,
             quantity: preset.quantity,
             error: `Only ${picked.length} unused comments left in the pool (needed ${preset.quantity}).`,
-            debug_detected_categories: detectedLinkCategories,
-            debug_effective_categories: effectiveCategories,
-            debug_slot_decision: "insufficient_comments",
           });
           continue;
         }
@@ -564,7 +581,9 @@ export async function submitOrderForLink(params: {
 
       if (res.error) {
         results.push({
-          service_type: preset.service_type,
+          service_type: serviceType,
+          slot_index: preset.slot_index ?? 1,
+          keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
           api_provider_id: providerId,
           provider_name: providerName,
           panel_service_id: serviceId,
@@ -572,19 +591,17 @@ export async function submitOrderForLink(params: {
           quantity: preset.quantity,
           error: res.error,
           status: res.status,
-          debug_detected_categories: isCommentServiceType(preset.service_type)
-            ? detectedLinkCategories
+          debug_detected_categories: isCommentServiceType(serviceType) ? detectedKeywords : undefined,
+          debug_effective_categories: isCommentServiceType(serviceType)
+            ? effectiveKeywordsForResult
             : undefined,
-          debug_effective_categories: isCommentServiceType(preset.service_type)
-            ? effectiveCategoriesForResult
-            : undefined,
-          debug_slot_decision: isCommentServiceType(preset.service_type)
-            ? "submitted_with_categories"
-            : undefined,
+          debug_slot_decision: undefined,
         });
       } else {
         results.push({
-          service_type: preset.service_type,
+          service_type: serviceType,
+          slot_index: preset.slot_index ?? 1,
+          keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
           api_provider_id: providerId,
           provider_name: providerName,
           panel_service_id: serviceId,
@@ -593,20 +610,18 @@ export async function submitOrderForLink(params: {
           panel_order_id: res.order,
           socpanel_order_id: res.order,
           status: res.status,
-          debug_detected_categories: isCommentServiceType(preset.service_type)
-            ? detectedLinkCategories
+          debug_detected_categories: isCommentServiceType(serviceType) ? detectedKeywords : undefined,
+          debug_effective_categories: isCommentServiceType(serviceType)
+            ? effectiveKeywordsForResult
             : undefined,
-          debug_effective_categories: isCommentServiceType(preset.service_type)
-            ? effectiveCategoriesForResult
-            : undefined,
-          debug_slot_decision: isCommentServiceType(preset.service_type)
-            ? "submitted_with_categories"
-            : undefined,
+          debug_slot_decision: undefined,
         });
       }
     } catch (error) {
       results.push({
-        service_type: preset.service_type,
+        service_type: serviceType,
+        slot_index: preset.slot_index ?? 1,
+        keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
         api_provider_id: providerId,
         provider_name: providerName,
         panel_service_id: serviceId,
@@ -634,7 +649,7 @@ export async function submitOrderForLink(params: {
 
 export async function submitBatchOrders(params: {
   platform: Platform;
-  tier: Tier;
+  tier?: string;
   links: string[];
   source?: string;
   commentPoolId?: string | null;

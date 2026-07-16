@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PLATFORM_META, PLATFORMS, PlatformKey } from "@/lib/platform-meta";
-import { X_COMMENT_CATEGORIES } from "@/lib/comment-categories";
 import { UploadCloud } from "lucide-react";
 
 type Pool = {
@@ -18,7 +17,7 @@ export default function CommentsPage() {
   const [pools, setPools] = useState<Pool[]>([]);
   const [filterPlatform, setFilterPlatform] = useState<PlatformKey>("x");
   const [uploadPlatform, setUploadPlatform] = useState<PlatformKey>("x");
-  const [xCategory, setXCategory] = useState<string>(X_COMMENT_CATEGORIES[0]);
+  const [xCategory, setXCategory] = useState<string>("");
   const [name, setName] = useState("");
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -168,17 +167,13 @@ export default function CommentsPage() {
               <label className="text-xs text-[#8b8fa3] block mb-1">
                 X category
               </label>
-              <select
+              <input
                 className="input"
+                placeholder="e.g. litho, founders, local-market"
                 value={xCategory}
                 onChange={(e) => setXCategory(e.target.value)}
-              >
-                {X_COMMENT_CATEGORIES.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
+                required
+              />
             </div>
           )}
         </div>

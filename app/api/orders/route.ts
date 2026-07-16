@@ -381,12 +381,15 @@ export async function POST(req: NextRequest) {
           .filter(Boolean)
       : parseOrderLinks(rawLinks);
 
-    if (!tier || batchLinks.length === 0) {
+    if (batchLinks.length === 0) {
       return NextResponse.json(
-        { error: "tier and at least one link are required." },
+        { error: "At least one link is required." },
         { status: 400 }
       );
     }
+
+    const normalizedTier =
+      typeof tier === "string" && tier.trim() ? tier.trim() : "regular";
 
     const normalizedUniqueLinks = [
       ...new Set(batchLinks.map((item) => item.trim()).filter(Boolean)),
@@ -421,7 +424,7 @@ export async function POST(req: NextRequest) {
 
           await submitOrderForLink({
             platform: item.platform,
-            tier,
+            tier: normalizedTier,
             link: item.link,
             commentPoolId: commentPoolId ?? null,
           });
