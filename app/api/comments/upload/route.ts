@@ -24,6 +24,14 @@ function isMissingCategoryColumnError(error: unknown) {
   return message.includes("category") && message.includes("comment_pools");
 }
 
+function isMissingTableError(error: unknown, tableName: string) {
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    message.includes(tableName.toLowerCase()) &&
+    (message.includes("schema cache") || message.includes("does not exist"))
+  );
+}
+
 function normalizeCommentLines(lines: string[]) {
   return lines.map((line) => line.trim()).filter(Boolean);
 }
@@ -221,4 +229,45 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     return NextResponse.json({ error: getErrorMessage(error) }, { status: 500 });
   }
+}
+
+export async function DELETE(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return NextResponse.json({ error: "id is required." }, { status: 400 });
+  }
+
+  const supabase = supabaseAdmin();
+
+  // Clear references first so pool deletion does not fail on FK constraints.
+  const { error: watchedAccountsError } = await supabase
+    .from("watched_x_accounts")
+    .update({ comment_pool_id: null })
+    .eq("comment_pool_id", id);
+
+  if (watchedAccountsError && !isMissingTableError(watchedAccountsError, "watched_x_accounts")) {
+    return NextResponse.json({ error: getErrorMessage(watchedAccountsError) }, { status: 500 });
+  }
+
+  const { error: ordersError } = await supabase
+    .from("orders")
+    .update({ comment_pool_id: null })
+    .eq("comment_pool_id", id);
+
+  if (ordersError && !isMissingTableError(ordersError, "orders")) {
+    return NextResponse.json({ error: getErrorMessage(ordersError) }, { status: 500 });
+  }
+
+  const { error: deleteError } = await supabase
+    .from("comment_pools")
+    .delete()
+    .eq("id", id);
+
+  if (deleteError) {
+    return NextResponse.json({ error: getErrorMessage(deleteError) }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
 }

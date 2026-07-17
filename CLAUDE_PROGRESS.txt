@@ -9,3 +9,5 @@
 - Added Services "Sync slots" action and backend slot normalization endpoint for contiguous slot numbering.
 - Updated keyword input UX: comma is separator, Enter commits split keywords.
 - Added provider-agnostic schema migration `supabase/migrations/0001_provider_agnostic_slots.sql` and updated setup docs.
+- Added comment pool delete support in Comments UI and API.
+- Added localhost-safe fallback for missing optional tables (`watched_x_accounts`/`orders`) during pool deletion.

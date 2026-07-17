@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PLATFORM_META, PLATFORMS, PlatformKey } from "@/lib/platform-meta";
-import { UploadCloud } from "lucide-react";
+import { Trash2, UploadCloud } from "lucide-react";
 
 type Pool = {
   id: string;
@@ -20,6 +20,7 @@ export default function CommentsPage() {
   const [xCategory, setXCategory] = useState<string>("");
   const [name, setName] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [deletingPoolId, setDeletingPoolId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -76,6 +77,34 @@ export default function CommentsPage() {
       setMsg(`Error: ${error instanceof Error ? error.message : "Unexpected error."}`);
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function removePool(pool: Pool) {
+    const confirmed = window.confirm(`Delete pool "${pool.name}"? This cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingPoolId(pool.id);
+    setMsg(null);
+
+    try {
+      const res = await fetch(`/api/comments/upload?id=${pool.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to delete comment pool.");
+      }
+
+      setMsg(`Deleted pool "${pool.name}".`);
+      await load();
+    } catch (error) {
+      setMsg(`Error: ${error instanceof Error ? error.message : "Unexpected error."}`);
+    } finally {
+      setDeletingPoolId(null);
     }
   }
 
@@ -230,9 +259,20 @@ export default function CommentsPage() {
                 {p.name}
                 {p.platform === "x" && p.category ? ` [${p.category}]` : ""}
               </span>
-              <span className="mono text-xs text-[#8b8fa3]">
-                {p.unused_count} unused left
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="mono text-xs text-[#8b8fa3]">
+                  {p.unused_count} unused left
+                </span>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => removePool(p)}
+                  disabled={deletingPoolId === p.id}
+                  aria-label={`Delete ${p.name}`}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
