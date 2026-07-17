@@ -419,15 +419,29 @@ export async function POST(req: NextRequest) {
 
     after(async () => {
       try {
-        for (const item of detectedLinks) {
-          if (!item.platform) continue;
+        const tasks = detectedLinks
+          .filter(
+            (item): item is { link: string; platform: Platform } =>
+              Boolean(item.platform)
+          )
+          .map((item) =>
+            submitOrderForLink({
+              platform: item.platform,
+              tier: normalizedTier,
+              link: item.link,
+              commentPoolId: commentPoolId ?? null,
+            })
+          );
 
-          await submitOrderForLink({
-            platform: item.platform,
-            tier: normalizedTier,
-            link: item.link,
-            commentPoolId: commentPoolId ?? null,
-          });
+        const results = await Promise.allSettled(tasks);
+        const failedCount = results.filter(
+          (result) => result.status === "rejected"
+        ).length;
+
+        if (failedCount > 0) {
+          console.error(
+            `Background order submission finished with ${failedCount} failed task(s).`
+          );
         }
       } catch (error) {
         console.error("Background order submission failed:", error);

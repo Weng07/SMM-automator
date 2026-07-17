@@ -12,3 +12,4 @@
 - Added comment pool delete support in Comments UI and API.
 - Added localhost-safe fallback for missing optional tables (`watched_x_accounts`/`orders`) during pool deletion.
 - Made X comment-pool category automatic: removed manual category input from upload UI and infer category from configured X comment-slot keywords.
+- Switched background order submission from sequential loop to concurrent batch execution using Promise.allSettled.
