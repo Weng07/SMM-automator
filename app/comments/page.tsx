@@ -17,7 +17,6 @@ export default function CommentsPage() {
   const [pools, setPools] = useState<Pool[]>([]);
   const [filterPlatform, setFilterPlatform] = useState<PlatformKey>("x");
   const [uploadPlatform, setUploadPlatform] = useState<PlatformKey>("x");
-  const [xCategory, setXCategory] = useState<string>("");
   const [name, setName] = useState("");
   const [uploading, setUploading] = useState(false);
   const [deletingPoolId, setDeletingPoolId] = useState<string | null>(null);
@@ -49,10 +48,6 @@ export default function CommentsPage() {
       form.set("file", file);
       form.set("name", name || file.name);
       form.set("platform", uploadPlatform);
-
-      if (uploadPlatform === "x") {
-        form.set("category", xCategory);
-      }
 
       const res = await fetch("/api/comments/upload", {
         method: "POST",
@@ -191,20 +186,6 @@ export default function CommentsPage() {
             />
           </div>
 
-          {uploadPlatform === "x" && (
-            <div>
-              <label className="text-xs text-[#8b8fa3] block mb-1">
-                X category
-              </label>
-              <input
-                className="input"
-                placeholder="e.g. litho, founders, local-market"
-                value={xCategory}
-                onChange={(e) => setXCategory(e.target.value)}
-                required
-              />
-            </div>
-          )}
         </div>
 
         <div className="flex items-center gap-3">

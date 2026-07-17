@@ -36,6 +36,46 @@ function normalizeCommentLines(lines: string[]) {
   return lines.map((line) => line.trim()).filter(Boolean);
 }
 
+function inferKeywordFromName(name: string, keywords: string[]) {
+  const normalizedName = name.trim().toLowerCase();
+  if (!normalizedName) return null;
+
+  // Prefer longer matches first so specific keywords win over short substrings.
+  const ordered = [...new Set(keywords)]
+    .map((keyword) => keyword.trim().toLowerCase())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+
+  return ordered.find((keyword) => normalizedName.includes(keyword)) ?? null;
+}
+
+async function inferAutoCategoryForX(name: string) {
+  const supabase = supabaseAdmin();
+  const { data, error } = await supabase
+    .from("service_presets")
+    .select("keywords, comment_categories")
+    .eq("platform", "x")
+    .eq("service_type", "comments")
+    .eq("enabled", true)
+    .order("slot_index", { ascending: true });
+
+  if (error || !data) {
+    return null;
+  }
+
+  const allKeywords = data.flatMap((preset) => {
+    const source = Array.isArray(preset.keywords) && preset.keywords.length > 0
+      ? preset.keywords
+      : preset.comment_categories;
+
+    return Array.isArray(source)
+      ? source.map((item) => String(item).trim().toLowerCase()).filter(Boolean)
+      : [];
+  });
+
+  return inferKeywordFromName(name, allKeywords);
+}
+
 function extractCommentsFromCsvOrText(text: string) {
   const parsed = Papa.parse<string[]>(text.trim(), { skipEmptyLines: true });
 
@@ -168,20 +208,12 @@ export async function POST(req: NextRequest) {
     const name = (formData.get("name") as string) || "Untitled pool";
     const platform = formData.get("platform") as string | null;
     const categoryRaw = (formData.get("category") as string | null)?.trim().toLowerCase() ?? "";
-    const category = categoryRaw || null;
 
     if (!file) {
       return NextResponse.json({ error: "No file uploaded." }, { status: 400 });
     }
     if (!platform) {
       return NextResponse.json({ error: "platform is required." }, { status: 400 });
-    }
-
-    if (platform === "x" && !category) {
-      return NextResponse.json(
-        { error: "X comment category is required." },
-        { status: 400 }
-      );
     }
 
     const comments = await extractCommentsFromFile(file);
@@ -192,6 +224,8 @@ export async function POST(req: NextRequest) {
 
     const supabase = supabaseAdmin();
     let pool: { id: string } | null = null;
+    const autoCategory = platform === "x" ? await inferAutoCategoryForX(name || file.name) : null;
+    const category = categoryRaw || autoCategory || null;
 
     const withCategoryInsert = await supabase
       .from("comment_pools")
