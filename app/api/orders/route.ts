@@ -261,6 +261,10 @@ export async function POST(req: NextRequest) {
         const nextServices: ServiceEntry[] = [];
         const canceledServiceTypes = new Set<string>();
         const canceledServiceIdsByType: Record<string, Set<string>> = {};
+        const fallbackDefaultsByType: Record<
+          string,
+          { quantity?: number; keywords?: string[] }
+        > = {};
 
         for (const service of services) {
           if (isDuplicateSkippedService(service)) {
@@ -308,6 +312,18 @@ export async function POST(req: NextRequest) {
                 existing.add(canceledServiceId);
                 canceledServiceIdsByType[normalizedType] = existing;
               }
+
+              fallbackDefaultsByType[normalizedType] = {
+                quantity:
+                  typeof service.quantity === "number" && Number.isFinite(service.quantity)
+                    ? Number(service.quantity)
+                    : undefined,
+                keywords: Array.isArray(service.keywords)
+                  ? service.keywords
+                      .map((value) => String(value).trim().toLowerCase())
+                      .filter(Boolean)
+                  : [],
+              };
             }
 
             nextServices.push({
@@ -375,6 +391,7 @@ export async function POST(req: NextRequest) {
             await retryOrderForId(order.id, {
               forceFallbackServiceTypes: [...canceledServiceTypes],
               avoidServiceIdsByType,
+              fallbackDefaultsByType,
             });
 
             fallbackReordersQueued += 1;

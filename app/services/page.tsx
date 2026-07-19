@@ -558,7 +558,8 @@ export default function ServicesPage() {
                         min={0}
                         className="input"
                         value={isEditing ? draft.quantity : preset?.quantity ?? 0}
-                        disabled={!isEditing}
+                        disabled={!isEditing || (isEditing && draft.is_fallback)}
+                        style={isEditing && draft.is_fallback ? { opacity: 0.55 } : undefined}
                         onChange={(e) =>
                           updateDraft(serviceType, slotIndex, {
                             quantity: Number(e.target.value),
@@ -570,9 +571,13 @@ export default function ServicesPage() {
                         {isEditing ? (
                           <input
                             className="input service-keyword-input"
-                            style={{ transform: "translateY(46px)" }}
+                            style={{
+                              transform: "translateY(46px)",
+                              opacity: draft.is_fallback ? 0.55 : 1,
+                            }}
                             placeholder="Type keywords separated by commas, then press Enter"
                             value={draft.keyword_input}
+                            disabled={draft.is_fallback}
                             onChange={(e) => {
                               updateDraft(serviceType, slotIndex, {
                                 keyword_input: e.target.value,
@@ -582,6 +587,10 @@ export default function ServicesPage() {
                               if (e.key === "Enter") {
                                 e.preventDefault();
                                 e.stopPropagation();
+
+                                if (draft.is_fallback) {
+                                  return;
+                                }
 
                                 addKeywordsToDraft(serviceType, slotIndex, draft.keyword_input);
                                 updateDraft(serviceType, slotIndex, { keyword_input: "" });

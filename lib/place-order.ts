@@ -23,6 +23,11 @@ type ServiceResult = {
   debug_slot_decision?: string;
 };
 
+type FallbackDefaults = {
+  quantity?: number;
+  keywords?: string[];
+};
+
 function isInstagramReel(link: string) {
   try {
     const url = new URL(link);
@@ -142,6 +147,37 @@ function normalizeServiceIdMap(
     if (key && idSet.size > 0) {
       normalized[key] = idSet;
     }
+  }
+
+  return normalized;
+}
+
+function normalizeFallbackDefaultsByType(
+  value: Record<string, FallbackDefaults> | undefined
+): Record<string, FallbackDefaults> {
+  if (!value) {
+    return {};
+  }
+
+  const normalized: Record<string, FallbackDefaults> = {};
+
+  for (const [serviceType, defaults] of Object.entries(value)) {
+    const key = normalizeServiceCategory(serviceType);
+    if (!key) {
+      continue;
+    }
+
+    const quantity =
+      typeof defaults?.quantity === "number" && Number.isFinite(defaults.quantity)
+        ? Math.max(0, Number(defaults.quantity))
+        : undefined;
+
+    const keywords = normalizeKeywords(defaults?.keywords ?? []);
+
+    normalized[key] = {
+      quantity,
+      keywords,
+    };
   }
 
   return normalized;
@@ -374,6 +410,7 @@ export async function retryOrderForId(
     fallbackForFailedServices?: boolean;
     forceFallbackServiceTypes?: string[];
     avoidServiceIdsByType?: Record<string, string[]>;
+    fallbackDefaultsByType?: Record<string, FallbackDefaults>;
   }
 ) {
   const supabase = supabaseAdmin();
@@ -394,6 +431,9 @@ export async function retryOrderForId(
 
   const avoidServiceIdsByType: Record<string, string[]> = {
     ...(options?.avoidServiceIdsByType ?? {}),
+  };
+  const fallbackDefaultsByType: Record<string, FallbackDefaults> = {
+    ...(options?.fallbackDefaultsByType ?? {}),
   };
 
   if (options?.fallbackForFailedServices) {
@@ -420,6 +460,14 @@ export async function retryOrderForId(
 
       const existing = avoidServiceIdsByType[serviceType] ?? [];
       avoidServiceIdsByType[serviceType] = [...new Set([...existing, serviceId])];
+
+      fallbackDefaultsByType[serviceType] = {
+        quantity:
+          typeof service.quantity === "number" && Number.isFinite(service.quantity)
+            ? Number(service.quantity)
+            : undefined,
+        keywords: normalizeKeywords(service.keywords ?? []),
+      };
     }
   }
 
@@ -431,6 +479,7 @@ export async function retryOrderForId(
     commentPoolId: orderRow.comment_pool_id ?? null,
     preferFallbackForServiceTypes: [...forceFallbackTypes],
     avoidServiceIdsByType,
+    fallbackDefaultsByType,
   });
 }
 
@@ -442,6 +491,7 @@ export async function submitOrderForLink(params: {
   commentPoolId?: string | null;
   preferFallbackForServiceTypes?: string[];
   avoidServiceIdsByType?: Record<string, string[]>;
+  fallbackDefaultsByType?: Record<string, FallbackDefaults>;
 }) {
   const supabase = supabaseAdmin();
 
@@ -533,6 +583,9 @@ export async function submitOrderForLink(params: {
     params.preferFallbackForServiceTypes
   );
   const avoidedIdsByType = normalizeServiceIdMap(params.avoidServiceIdsByType);
+  const fallbackDefaultsByType = normalizeFallbackDefaultsByType(
+    params.fallbackDefaultsByType
+  );
 
   for (const preset of filteredPresets) {
     const serviceType = String(preset.service_type);
@@ -580,6 +633,19 @@ export async function submitOrderForLink(params: {
       quantity: number;
     };
 
+    const fallbackDefaults = fallbackDefaultsByType[normalizedType];
+    const presetKeywords = normalizeKeywords(
+      preset.keywords ?? preset.comment_categories
+    );
+    const effectiveKeywords =
+      useFallback && presetKeywords.length === 0
+        ? normalizeKeywords(fallbackDefaults?.keywords ?? [])
+        : presetKeywords;
+    const effectiveQuantity =
+      useFallback && Number(preset.quantity) <= 0
+        ? Math.max(0, Number(fallbackDefaults?.quantity ?? 0))
+        : Number(preset.quantity);
+
     const serviceId = preset.panel_service_id || preset.socpanel_service_id || null;
     const providerId = preset.api_provider_id ?? null;
     const providerName =
@@ -595,13 +661,13 @@ export async function submitOrderForLink(params: {
       results.push({
         service_type: serviceType,
         slot_index: preset.slot_index ?? 1,
-        keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
+        keywords: effectiveKeywords,
         is_fallback: Boolean(preset.is_fallback),
         api_provider_id: providerId,
         provider_name: providerName,
         panel_service_id: serviceId,
         socpanel_service_id: serviceId,
-        quantity: preset.quantity,
+        quantity: effectiveQuantity,
         error: "Duplicate order",
       });
 
@@ -612,14 +678,30 @@ export async function submitOrderForLink(params: {
       results.push({
         service_type: serviceType,
         slot_index: preset.slot_index ?? 1,
-        keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
+        keywords: effectiveKeywords,
         is_fallback: Boolean(preset.is_fallback),
         api_provider_id: providerId,
         provider_name: providerName,
         panel_service_id: null,
         socpanel_service_id: null,
-        quantity: preset.quantity,
+        quantity: effectiveQuantity,
         error: "No panel service ID mapped for this preset yet.",
+      });
+      continue;
+    }
+
+    if (effectiveQuantity <= 0) {
+      results.push({
+        service_type: serviceType,
+        slot_index: preset.slot_index ?? 1,
+        keywords: effectiveKeywords,
+        is_fallback: Boolean(preset.is_fallback),
+        api_provider_id: providerId,
+        provider_name: providerName,
+        panel_service_id: serviceId,
+        socpanel_service_id: serviceId,
+        quantity: effectiveQuantity,
+        error: "Quantity must be greater than 0.",
       });
       continue;
     }
@@ -633,22 +715,19 @@ export async function submitOrderForLink(params: {
           results.push({
             service_type: serviceType,
             slot_index: preset.slot_index ?? 1,
-            keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
+            keywords: effectiveKeywords,
             is_fallback: Boolean(preset.is_fallback),
             api_provider_id: providerId,
             provider_name: providerName,
             panel_service_id: serviceId,
             socpanel_service_id: serviceId,
-            quantity: preset.quantity,
+            quantity: effectiveQuantity,
             skipped: true,
             error: "Comments are disabled for this platform.",
           });
           continue;
         }
 
-        const effectiveKeywords = normalizeKeywords(
-          preset.keywords ?? preset.comment_categories
-        );
         effectiveKeywordsForResult = effectiveKeywords;
 
         let poolId = params.commentPoolId ?? null;
@@ -670,7 +749,7 @@ export async function submitOrderForLink(params: {
               provider_name: providerName,
               panel_service_id: serviceId,
               socpanel_service_id: serviceId,
-              quantity: preset.quantity,
+              quantity: effectiveQuantity,
               error: "Selected comment pool is invalid for this platform.",
             });
             continue;
@@ -690,7 +769,7 @@ export async function submitOrderForLink(params: {
               provider_name: providerName,
               panel_service_id: serviceId,
               socpanel_service_id: serviceId,
-              quantity: preset.quantity,
+              quantity: effectiveQuantity,
               error: `Selected pool category is ${poolRow.category ?? "uncategorized"} and does not match this slot.`,
             });
             continue;
@@ -718,7 +797,7 @@ export async function submitOrderForLink(params: {
               provider_name: providerName,
               panel_service_id: serviceId,
               socpanel_service_id: serviceId,
-              quantity: preset.quantity,
+              quantity: effectiveQuantity,
               error: `No unused comment pool found for ${params.platform}${categoryHint}.`,
             });
             continue;
@@ -727,9 +806,9 @@ export async function submitOrderForLink(params: {
           poolId = autoPool.id;
         }
 
-        const picked = await popComments(poolId as string, preset.quantity);
+        const picked = await popComments(poolId as string, effectiveQuantity);
 
-        if (picked.length < preset.quantity) {
+        if (picked.length < effectiveQuantity) {
           results.push({
             service_type: serviceType,
             slot_index: preset.slot_index ?? 1,
@@ -739,8 +818,8 @@ export async function submitOrderForLink(params: {
             provider_name: providerName,
             panel_service_id: serviceId,
             socpanel_service_id: serviceId,
-            quantity: preset.quantity,
-            error: `Only ${picked.length} unused comments left in the pool (needed ${preset.quantity}).`,
+            quantity: effectiveQuantity,
+            error: `Only ${picked.length} unused comments left in the pool (needed ${effectiveQuantity}).`,
           });
           continue;
         }
@@ -752,7 +831,7 @@ export async function submitOrderForLink(params: {
         providerId,
         serviceId,
         link: params.link,
-        quantity: preset.quantity,
+        quantity: effectiveQuantity,
         comments,
       });
 
@@ -760,13 +839,13 @@ export async function submitOrderForLink(params: {
         results.push({
           service_type: serviceType,
           slot_index: preset.slot_index ?? 1,
-          keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
+          keywords: effectiveKeywords,
           is_fallback: Boolean(preset.is_fallback),
           api_provider_id: providerId,
           provider_name: providerName,
           panel_service_id: serviceId,
           socpanel_service_id: serviceId,
-          quantity: preset.quantity,
+          quantity: effectiveQuantity,
           error: res.error,
           status: res.status,
           debug_detected_categories: isCommentServiceType(serviceType) ? detectedKeywords : undefined,
@@ -779,13 +858,13 @@ export async function submitOrderForLink(params: {
         results.push({
           service_type: serviceType,
           slot_index: preset.slot_index ?? 1,
-          keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
+          keywords: effectiveKeywords,
           is_fallback: Boolean(preset.is_fallback),
           api_provider_id: providerId,
           provider_name: providerName,
           panel_service_id: serviceId,
           socpanel_service_id: serviceId,
-          quantity: preset.quantity,
+          quantity: effectiveQuantity,
           panel_order_id: res.order,
           socpanel_order_id: res.order,
           status: res.status,
@@ -800,13 +879,13 @@ export async function submitOrderForLink(params: {
       results.push({
         service_type: serviceType,
         slot_index: preset.slot_index ?? 1,
-        keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
+        keywords: effectiveKeywords,
         is_fallback: Boolean(preset.is_fallback),
         api_provider_id: providerId,
         provider_name: providerName,
         panel_service_id: serviceId,
         socpanel_service_id: serviceId,
-        quantity: preset.quantity,
+        quantity: effectiveQuantity,
         error: error instanceof Error ? error.message : "Unknown error placing order.",
       });
     }

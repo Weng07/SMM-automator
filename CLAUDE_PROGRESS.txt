@@ -20,3 +20,5 @@
 - Updated orders sync/manual retry flows to auto-retry failed services using fallback slots with different service IDs.
 - Added Supabase 10-minute scheduler support via `pg_cron` + `pg_net` with secure endpoint `/api/cron/sync-orders`.
 - Added migrations `0002_service_preset_fallback.sql` and `0003_supabase_sync_cron.sql`.
+- Updated fallback behavior so blank fallback qty/keywords inherit from failed service context during retry.
+- Grayed out and disabled fallback qty/keyword inputs in Services when fallback is enabled.
