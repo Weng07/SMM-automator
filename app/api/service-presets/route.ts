@@ -92,6 +92,7 @@ export async function POST(req: NextRequest) {
     panel_service_id,
     quantity,
     enabled,
+    is_fallback,
     keywords,
     comment_categories,
   } = body;
@@ -130,6 +131,7 @@ export async function POST(req: NextRequest) {
         comment_categories: normalizedKeywords,
         keywords: normalizedKeywords,
         enabled: enabled ?? true,
+        is_fallback: is_fallback ?? false,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "platform,service_type,slot_index" }

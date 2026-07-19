@@ -179,7 +179,7 @@ export default function OrdersPage() {
       }
 
       setFeedback(
-        `${data.checkedOrders ?? 0} orders checked, ${data.updatedOrders ?? 0} updated, ${data.deletedOrders ?? 0} duplicate order${(data.deletedOrders ?? 0) === 1 ? "" : "s"} removed, ${data.canceledServices ?? 0} service${(data.canceledServices ?? 0) === 1 ? "" : "s"} marked as canceled on provider side, ${data.removedDuplicateServices ?? 0} duplicate trace${(data.removedDuplicateServices ?? 0) === 1 ? "" : "s"} removed.`
+        `${data.checkedOrders ?? 0} orders checked, ${data.updatedOrders ?? 0} updated, ${data.deletedOrders ?? 0} duplicate order${(data.deletedOrders ?? 0) === 1 ? "" : "s"} removed, ${data.canceledServices ?? 0} service${(data.canceledServices ?? 0) === 1 ? "" : "s"} marked as canceled on provider side, ${data.removedDuplicateServices ?? 0} duplicate trace${(data.removedDuplicateServices ?? 0) === 1 ? "" : "s"} removed, ${data.fallbackReordersQueued ?? 0} fallback reorder${(data.fallbackReordersQueued ?? 0) === 1 ? "" : "s"} queued${(data.fallbackReordersFailed ?? 0) > 0 ? ` (${data.fallbackReordersFailed} failed)` : ""}.`
       );
       shouldRefresh = true;
     } catch (error) {

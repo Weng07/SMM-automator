@@ -7,6 +7,7 @@ type ServiceResult = {
   service_type: string;
   slot_index?: number;
   keywords?: string[];
+  is_fallback?: boolean;
   api_provider_id?: string | null;
   provider_name?: string | null;
   panel_service_id: string | null;
@@ -111,6 +112,61 @@ function normalizeKeywords(value: unknown): string[] {
     .filter(Boolean))];
 }
 
+function normalizeServiceTypeList(serviceTypes: string[] | undefined): Set<string> {
+  if (!serviceTypes || serviceTypes.length === 0) {
+    return new Set();
+  }
+
+  return new Set(
+    serviceTypes
+      .map((value) => normalizeServiceCategory(String(value)))
+      .filter(Boolean)
+  );
+}
+
+function normalizeServiceIdMap(
+  value: Record<string, string[]> | undefined
+): Record<string, Set<string>> {
+  if (!value) {
+    return {};
+  }
+
+  const normalized: Record<string, Set<string>> = {};
+
+  for (const [serviceType, ids] of Object.entries(value)) {
+    const key = normalizeServiceCategory(serviceType);
+    const idSet = new Set(
+      (ids ?? []).map((item) => String(item).trim()).filter(Boolean)
+    );
+
+    if (key && idSet.size > 0) {
+      normalized[key] = idSet;
+    }
+  }
+
+  return normalized;
+}
+
+function isServiceFailureForRetry(service: Record<string, unknown>): boolean {
+  if (service.skipped) {
+    return false;
+  }
+
+  const status = String(service.status ?? "").trim().toLowerCase();
+  const error = String(service.error ?? "").trim();
+  const hasOrderId = Boolean(service.panel_order_id ?? service.socpanel_order_id);
+
+  if (status && /failed|canceled|cancelled|error|declined|rejected|denied/.test(status)) {
+    return true;
+  }
+
+  if (error && /failed|canceled|cancelled|error|declined|rejected|denied/.test(error.toLowerCase())) {
+    return true;
+  }
+
+  return !hasOrderId;
+}
+
 function extractDetectedKeywordsFromLink(link: string): string[] {
   const normalized = decodeURIComponent(link).toLowerCase();
   const matches = normalized.match(/[a-z0-9_\-]+/g) ?? [];
@@ -150,6 +206,80 @@ function pickShuffledSlot<T extends { slot_index?: number }>(params: {
   // Deterministic distribution: same seed => same slot, different seeds spread across slots.
   const pick = hashString(params.seed) % ordered.length;
   return ordered[pick] ?? null;
+}
+
+function selectPresetForServiceType(params: {
+  servicePresets: Array<Record<string, unknown>>;
+  link: string;
+  platform: Platform;
+  serviceType: string;
+  useFallback: boolean;
+  excludedServiceIds?: Set<string>;
+}) {
+  const byMode = params.servicePresets.filter((preset) => {
+    const isFallback = Boolean((preset as { is_fallback?: unknown }).is_fallback);
+    return params.useFallback ? isFallback : !isFallback;
+  });
+
+  if (byMode.length === 0) {
+    return null;
+  }
+
+  const filteredByServiceId = byMode.filter((preset) => {
+    const serviceId = String(
+      (preset as { panel_service_id?: unknown; socpanel_service_id?: unknown }).panel_service_id ??
+        (preset as { socpanel_service_id?: unknown }).socpanel_service_id ??
+        ""
+    ).trim();
+
+    if (!serviceId || !params.excludedServiceIds || params.excludedServiceIds.size === 0) {
+      return true;
+    }
+
+    return !params.excludedServiceIds.has(serviceId);
+  });
+
+  if (filteredByServiceId.length === 0) {
+    return null;
+  }
+
+  const withKeywords = filteredByServiceId.filter((preset) =>
+    normalizeKeywords(
+      (preset as { keywords?: unknown; comment_categories?: unknown }).keywords ??
+        (preset as { comment_categories?: unknown }).comment_categories
+    ).length > 0
+  );
+
+  const keywordMatched = withKeywords.filter((preset) =>
+    matchesAnyKeyword(
+      params.link,
+      normalizeKeywords(
+        (preset as { keywords?: unknown; comment_categories?: unknown }).keywords ??
+          (preset as { comment_categories?: unknown }).comment_categories
+      )
+    )
+  );
+
+  const noKeywordSlots = filteredByServiceId.filter((preset) =>
+    normalizeKeywords(
+      (preset as { keywords?: unknown; comment_categories?: unknown }).keywords ??
+        (preset as { comment_categories?: unknown }).comment_categories
+    ).length === 0
+  );
+
+  if (keywordMatched.length > 0) {
+    return pickShuffledSlot({
+      candidates: keywordMatched as Array<{ slot_index?: number }>,
+      seed: `${params.platform}:${params.serviceType}:${params.link}:${params.useFallback ? "fallback" : "primary"}`,
+    }) as Record<string, unknown> | null;
+  }
+
+  return ([...noKeywordSlots]
+    .sort(
+      (a, b) =>
+        (Number((a as { slot_index?: unknown }).slot_index) || 1) -
+        (Number((b as { slot_index?: unknown }).slot_index) || 1)
+    )[0] as Record<string, unknown> | undefined) ?? null;
 }
 
 async function findOldestAvailablePoolForCategories(params: {
@@ -238,17 +368,59 @@ async function wasServiceAlreadySubmitted(params: {
   return false;
 }
 
-export async function retryOrderForId(orderId: string) {
+export async function retryOrderForId(
+  orderId: string,
+  options?: {
+    fallbackForFailedServices?: boolean;
+    forceFallbackServiceTypes?: string[];
+    avoidServiceIdsByType?: Record<string, string[]>;
+  }
+) {
   const supabase = supabaseAdmin();
 
   const { data: orderRow, error: orderErr } = await supabase
     .from("orders")
-    .select("id, platform, tier, link, comment_pool_id, source")
+    .select("id, platform, tier, link, comment_pool_id, source, services_ordered")
     .eq("id", orderId)
     .single();
 
   if (orderErr || !orderRow) {
     throw new Error("Order not found.");
+  }
+
+  const forceFallbackTypes = new Set(
+    options?.forceFallbackServiceTypes?.map((value) => String(value)) ?? []
+  );
+
+  const avoidServiceIdsByType: Record<string, string[]> = {
+    ...(options?.avoidServiceIdsByType ?? {}),
+  };
+
+  if (options?.fallbackForFailedServices) {
+    const services = Array.isArray(orderRow.services_ordered)
+      ? (orderRow.services_ordered as Array<Record<string, unknown>>)
+      : [];
+
+    for (const service of services) {
+      const serviceType = String(service.service_type ?? "").trim();
+
+      if (!serviceType || !isServiceFailureForRetry(service)) {
+        continue;
+      }
+
+      forceFallbackTypes.add(serviceType);
+
+      const serviceId = String(
+        service.panel_service_id ?? service.socpanel_service_id ?? ""
+      ).trim();
+
+      if (!serviceId) {
+        continue;
+      }
+
+      const existing = avoidServiceIdsByType[serviceType] ?? [];
+      avoidServiceIdsByType[serviceType] = [...new Set([...existing, serviceId])];
+    }
   }
 
   return submitOrderForLink({
@@ -257,6 +429,8 @@ export async function retryOrderForId(orderId: string) {
     link: orderRow.link,
     source: orderRow.source ?? "retry",
     commentPoolId: orderRow.comment_pool_id ?? null,
+    preferFallbackForServiceTypes: [...forceFallbackTypes],
+    avoidServiceIdsByType,
   });
 }
 
@@ -266,6 +440,8 @@ export async function submitOrderForLink(params: {
   link: string;
   source?: string;
   commentPoolId?: string | null;
+  preferFallbackForServiceTypes?: string[];
+  avoidServiceIdsByType?: Record<string, string[]>;
 }) {
   const supabase = supabaseAdmin();
 
@@ -353,6 +529,10 @@ export async function submitOrderForLink(params: {
   }
 
   const groupedPresets = new Map<string, Array<Record<string, unknown>>>();
+  const fallbackServiceTypes = normalizeServiceTypeList(
+    params.preferFallbackForServiceTypes
+  );
+  const avoidedIdsByType = normalizeServiceIdMap(params.avoidServiceIdsByType);
 
   for (const preset of filteredPresets) {
     const serviceType = String(preset.service_type);
@@ -362,39 +542,28 @@ export async function submitOrderForLink(params: {
   }
 
   for (const [serviceType, servicePresets] of groupedPresets.entries()) {
-    // Slots with explicit keywords participate only in keyword matching.
-    const withKeywords = servicePresets.filter((preset) =>
-      normalizeKeywords((preset as { keywords?: unknown; comment_categories?: unknown }).keywords ?? (preset as { comment_categories?: unknown }).comment_categories).length > 0
-    );
-
-    // Match slots whose configured keywords appear in the submitted link.
-    const keywordMatched = withKeywords.filter((preset) =>
-      matchesAnyKeyword(
-        params.link,
-        normalizeKeywords((preset as { keywords?: unknown; comment_categories?: unknown }).keywords ?? (preset as { comment_categories?: unknown }).comment_categories)
-      )
-    );
-
-    // Slots without keywords are default fallback slots for unmatched links.
-    const fallbackSlots = servicePresets.filter((preset) =>
-      normalizeKeywords((preset as { keywords?: unknown; comment_categories?: unknown }).keywords ?? (preset as { comment_categories?: unknown }).comment_categories).length === 0
-    );
-
-    // If multiple keyword slots match, distribute links deterministically via hash.
-    // If no keyword slot matches, use the first fallback slot (lowest slot_index).
-    const selectedPreset = keywordMatched.length > 0
-      ? pickShuffledSlot({
-          candidates: keywordMatched as Array<{ slot_index?: number }>,
-          seed: `${params.platform}:${serviceType}:${params.link}`,
-        }) as Record<string, unknown> | null
-      : ([...fallbackSlots]
-          .sort(
-            (a, b) =>
-              (Number((a as { slot_index?: unknown }).slot_index) || 1) -
-              (Number((b as { slot_index?: unknown }).slot_index) || 1)
-          )[0] as Record<string, unknown> | undefined) ?? null;
+    const normalizedType = normalizeServiceCategory(serviceType);
+    const useFallback = fallbackServiceTypes.has(normalizedType);
+    const selectedPreset = selectPresetForServiceType({
+      servicePresets,
+      link: params.link,
+      platform: params.platform,
+      serviceType,
+      useFallback,
+      excludedServiceIds: avoidedIdsByType[normalizedType],
+    });
 
     if (!selectedPreset) {
+      if (useFallback) {
+        results.push({
+          service_type: serviceType,
+          quantity: 0,
+          panel_service_id: null,
+          socpanel_service_id: null,
+          is_fallback: true,
+          error: "No fallback slot matched this link (or all fallback service IDs were excluded).",
+        });
+      }
       continue;
     }
 
@@ -403,6 +572,7 @@ export async function submitOrderForLink(params: {
       slot_index?: number;
       keywords?: unknown;
       comment_categories?: unknown;
+      is_fallback?: boolean;
       api_provider_id?: string | null;
       api_providers?: { name?: string | null };
       panel_service_id?: string | null;
@@ -426,6 +596,7 @@ export async function submitOrderForLink(params: {
         service_type: serviceType,
         slot_index: preset.slot_index ?? 1,
         keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
+        is_fallback: Boolean(preset.is_fallback),
         api_provider_id: providerId,
         provider_name: providerName,
         panel_service_id: serviceId,
@@ -442,6 +613,7 @@ export async function submitOrderForLink(params: {
         service_type: serviceType,
         slot_index: preset.slot_index ?? 1,
         keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
+        is_fallback: Boolean(preset.is_fallback),
         api_provider_id: providerId,
         provider_name: providerName,
         panel_service_id: null,
@@ -462,6 +634,7 @@ export async function submitOrderForLink(params: {
             service_type: serviceType,
             slot_index: preset.slot_index ?? 1,
             keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
+            is_fallback: Boolean(preset.is_fallback),
             api_provider_id: providerId,
             provider_name: providerName,
             panel_service_id: serviceId,
@@ -492,6 +665,7 @@ export async function submitOrderForLink(params: {
               service_type: serviceType,
               slot_index: preset.slot_index ?? 1,
               keywords: effectiveKeywords,
+              is_fallback: Boolean(preset.is_fallback),
               api_provider_id: providerId,
               provider_name: providerName,
               panel_service_id: serviceId,
@@ -511,6 +685,7 @@ export async function submitOrderForLink(params: {
               service_type: serviceType,
               slot_index: preset.slot_index ?? 1,
               keywords: effectiveKeywords,
+              is_fallback: Boolean(preset.is_fallback),
               api_provider_id: providerId,
               provider_name: providerName,
               panel_service_id: serviceId,
@@ -538,6 +713,7 @@ export async function submitOrderForLink(params: {
               service_type: serviceType,
               slot_index: preset.slot_index ?? 1,
               keywords: effectiveKeywords,
+              is_fallback: Boolean(preset.is_fallback),
               api_provider_id: providerId,
               provider_name: providerName,
               panel_service_id: serviceId,
@@ -558,6 +734,7 @@ export async function submitOrderForLink(params: {
             service_type: serviceType,
             slot_index: preset.slot_index ?? 1,
             keywords: effectiveKeywords,
+            is_fallback: Boolean(preset.is_fallback),
             api_provider_id: providerId,
             provider_name: providerName,
             panel_service_id: serviceId,
@@ -584,6 +761,7 @@ export async function submitOrderForLink(params: {
           service_type: serviceType,
           slot_index: preset.slot_index ?? 1,
           keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
+          is_fallback: Boolean(preset.is_fallback),
           api_provider_id: providerId,
           provider_name: providerName,
           panel_service_id: serviceId,
@@ -602,6 +780,7 @@ export async function submitOrderForLink(params: {
           service_type: serviceType,
           slot_index: preset.slot_index ?? 1,
           keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
+          is_fallback: Boolean(preset.is_fallback),
           api_provider_id: providerId,
           provider_name: providerName,
           panel_service_id: serviceId,
@@ -622,6 +801,7 @@ export async function submitOrderForLink(params: {
         service_type: serviceType,
         slot_index: preset.slot_index ?? 1,
         keywords: normalizeKeywords(preset.keywords ?? preset.comment_categories),
+        is_fallback: Boolean(preset.is_fallback),
         api_provider_id: providerId,
         provider_name: providerName,
         panel_service_id: serviceId,

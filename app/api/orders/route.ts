@@ -243,6 +243,8 @@ export async function POST(req: NextRequest) {
       let canceledServices = 0;
       let removedDuplicateServices = 0;
       let deletedOrders = 0;
+      let fallbackReordersQueued = 0;
+      let fallbackReordersFailed = 0;
 
       for (const order of orders ?? []) {
         checkedOrders += 1;
@@ -257,6 +259,8 @@ export async function POST(req: NextRequest) {
 
         let orderChanged = false;
         const nextServices: ServiceEntry[] = [];
+        const canceledServiceTypes = new Set<string>();
+        const canceledServiceIdsByType: Record<string, Set<string>> = {};
 
         for (const service of services) {
           if (isDuplicateSkippedService(service)) {
@@ -290,6 +294,21 @@ export async function POST(req: NextRequest) {
 
             canceledServices += 1;
             orderChanged = true;
+
+            if (typeof service.service_type === "string" && service.service_type.trim()) {
+              const normalizedType = service.service_type.trim();
+              canceledServiceTypes.add(normalizedType);
+
+              const canceledServiceId = String(
+                service.panel_service_id ?? service.socpanel_service_id ?? ""
+              ).trim();
+
+              if (canceledServiceId) {
+                const existing = canceledServiceIdsByType[normalizedType] ?? new Set<string>();
+                existing.add(canceledServiceId);
+                canceledServiceIdsByType[normalizedType] = existing;
+              }
+            }
 
             nextServices.push({
               ...service,
@@ -343,6 +362,26 @@ export async function POST(req: NextRequest) {
         }
 
         updatedOrders += 1;
+
+        if (canceledServiceTypes.size > 0) {
+          try {
+            const avoidServiceIdsByType = Object.fromEntries(
+              Object.entries(canceledServiceIdsByType).map(([serviceType, ids]) => [
+                serviceType,
+                [...ids],
+              ])
+            );
+
+            await retryOrderForId(order.id, {
+              forceFallbackServiceTypes: [...canceledServiceTypes],
+              avoidServiceIdsByType,
+            });
+
+            fallbackReordersQueued += 1;
+          } catch {
+            fallbackReordersFailed += 1;
+          }
+        }
       }
 
       return NextResponse.json({
@@ -353,6 +392,8 @@ export async function POST(req: NextRequest) {
         deletedOrders,
         canceledServices,
         removedDuplicateServices,
+        fallbackReordersQueued,
+        fallbackReordersFailed,
       });
     }
 
@@ -364,7 +405,9 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const result = await retryOrderForId(orderId);
+      const result = await retryOrderForId(orderId, {
+        fallbackForFailedServices: true,
+      });
       return NextResponse.json({ ok: true, retry: true, orderId: result.orderId });
     }
 

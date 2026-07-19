@@ -86,6 +86,7 @@ create table if not exists service_presets (
   quantity int not null default 0,
   comment_categories text[] not null default '{}',
   keywords text[] not null default '{}',
+  is_fallback boolean not null default false,
   enabled boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -97,6 +98,7 @@ alter table service_presets add column if not exists panel_service_id text;
 alter table service_presets add column if not exists comment_categories text[] not null default '{}';
 alter table service_presets add column if not exists slot_index int not null default 1;
 alter table service_presets add column if not exists keywords text[] not null default '{}';
+alter table service_presets add column if not exists is_fallback boolean not null default false;
 
 -- Critical: remove old/new unique constraints before normalization updates.
 alter table service_presets drop constraint if exists service_presets_platform_tier_service_type_key;

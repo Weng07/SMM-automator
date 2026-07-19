@@ -13,3 +13,10 @@
 - Added localhost-safe fallback for missing optional tables (`watched_x_accounts`/`orders`) during pool deletion.
 - Made X comment-pool category automatic: removed manual category input from upload UI and infer category from configured X comment-slot keywords.
 - Switched background order submission from sequential loop to concurrent batch execution using Promise.allSettled.
+
+2026-07-20
+- Added global keyword-aware fallback routing for failed/canceled services using new `service_presets.is_fallback` slots.
+- Updated Services UI/API to manage fallback slots and preserve existing keyword matching behavior.
+- Updated orders sync/manual retry flows to auto-retry failed services using fallback slots with different service IDs.
+- Added Supabase 10-minute scheduler support via `pg_cron` + `pg_net` with secure endpoint `/api/cron/sync-orders`.
+- Added migrations `0002_service_preset_fallback.sql` and `0003_supabase_sync_cron.sql`.

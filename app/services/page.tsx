@@ -30,6 +30,7 @@ type Preset = {
   panel_service_id: string | null;
   quantity: number;
   keywords?: string[] | null;
+  is_fallback?: boolean;
   enabled: boolean;
 };
 
@@ -39,6 +40,7 @@ type DraftPreset = {
   quantity: number;
   keywords: string[];
   keyword_input: string;
+  is_fallback: boolean;
   enabled: boolean;
 };
 
@@ -163,6 +165,7 @@ export default function ServicesPage() {
       quantity: preset?.quantity ?? 0,
       keywords: normalizeKeywords(preset?.keywords),
       keyword_input: "",
+      is_fallback: preset?.is_fallback ?? false,
       enabled: preset?.enabled ?? true,
     };
   }
@@ -264,6 +267,7 @@ export default function ServicesPage() {
       panel_service_id: selectedServiceId,
       quantity: draft.quantity,
       keywords: draft.keywords,
+      is_fallback: draft.is_fallback,
       enabled: draft.enabled,
     };
 
@@ -640,6 +644,20 @@ export default function ServicesPage() {
                           ))}
                         </div>
                       </div>
+
+                      <label className="toggle-label">
+                        <input
+                          type="checkbox"
+                          checked={isEditing ? draft.is_fallback : preset?.is_fallback ?? false}
+                          disabled={!isEditing}
+                          onChange={(e) =>
+                            updateDraft(serviceType, slotIndex, {
+                              is_fallback: e.target.checked,
+                            })
+                          }
+                        />
+                        fallback
+                      </label>
 
                       <label className="toggle-label">
                         <input
