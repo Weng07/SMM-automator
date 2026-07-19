@@ -22,3 +22,6 @@
 - Added migrations `0002_service_preset_fallback.sql` and `0003_supabase_sync_cron.sql`.
 - Updated fallback behavior so blank fallback qty/keywords inherit from failed service context during retry.
 - Grayed out and disabled fallback qty/keyword inputs in Services when fallback is enabled.
+- Fixed Orders failed-tab visibility by moving status filtering server-side (not limited to cached latest 25 rows).
+- Added Orders previous/next pagination so older completed/failed history is browsable.
+- Fixed pagination regression where clicking Next returned to page 1 by removing page-coupled effect triggers.

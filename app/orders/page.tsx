@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PLATFORM_META, PlatformKey } from "@/lib/platform-meta";
 import {
   AlertTriangle,
@@ -52,6 +52,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function OrdersPage() {
+  const pageSize = 25;
   const [orders, setOrders] = useState<Order[]>(() => {
     if (typeof window === "undefined") return [];
 
@@ -85,8 +86,14 @@ export default function OrdersPage() {
   const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [hasPrev, setHasPrev] = useState(false);
+  const [hasNext, setHasNext] = useState(false);
+  const [total, setTotal] = useState(0);
 
-  async function loadOrders() {
+  const loadOrders = useCallback(async (options: { page: number; status: string }) => {
+    const targetPage = options.page;
+    const targetStatus = options.status;
     const hasCachedOrders =
       typeof window !== "undefined" &&
       window.localStorage.getItem("panelist_orders_page_orders");
@@ -96,11 +103,20 @@ export default function OrdersPage() {
     }
 
     try {
-      const res = await fetch("/api/orders?limit=25");
+      const query = new URLSearchParams({
+        limit: String(pageSize),
+        page: String(targetPage),
+        status: targetStatus,
+      });
+      const res = await fetch(`/api/orders?${query.toString()}`);
       const data = await res.json();
       const nextOrders = data.orders ?? [];
 
       setOrders(nextOrders);
+      setPage(data.page ?? targetPage);
+      setHasPrev(Boolean(data.hasPrev));
+      setHasNext(Boolean(data.hasNext));
+      setTotal(Number(data.total ?? 0));
       window.localStorage.setItem(
         "panelist_orders_page_orders",
         JSON.stringify(nextOrders)
@@ -108,9 +124,9 @@ export default function OrdersPage() {
     } finally {
       setOrdersLoading(false);
     }
-  }
+  }, [pageSize]);
 
-  async function loadStats() {
+  const loadStats = useCallback(async () => {
     setStatsLoading(true);
 
     try {
@@ -126,13 +142,13 @@ export default function OrdersPage() {
     } finally {
       setStatsLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadOrders();
+    void loadOrders({ page: 1, status: statusFilter });
     void loadStats();
-  }, []);
+  }, [statusFilter, loadOrders, loadStats]);
 
   async function retryOrder(orderId: string) {
     setRetryingOrderId(orderId);
@@ -151,7 +167,7 @@ export default function OrdersPage() {
       }
 
       setFeedback("Retry queued successfully.");
-      await loadOrders();
+      await loadOrders({ page, status: statusFilter });
       await loadStats();
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Retry failed.");
@@ -191,18 +207,13 @@ export default function OrdersPage() {
     if (shouldRefresh) {
       setLoading(true);
       try {
-        await loadOrders();
+        await loadOrders({ page, status: statusFilter });
         await loadStats();
       } finally {
         setLoading(false);
       }
     }
   }
-
-  const visibleOrders = orders.filter((order) => {
-    if (statusFilter === "all") return true;
-    return order.status === statusFilter;
-  });
 
   return (
     <div className="flex flex-col gap-7">
@@ -288,7 +299,7 @@ export default function OrdersPage() {
                 void (async () => {
                   setLoading(true);
                   try {
-                    await loadOrders();
+                    await loadOrders({ page, status: statusFilter });
                     await loadStats();
                   } finally {
                     setLoading(false);
@@ -314,7 +325,10 @@ export default function OrdersPage() {
             <button
               key={status}
               type="button"
-              onClick={() => setStatusFilter(status)}
+              onClick={() => {
+                setStatusFilter(status);
+                setPage(1);
+              }}
               className={`platform-pill ${statusFilter === status ? "active" : ""}`}
             >
               {status}
@@ -329,7 +343,7 @@ export default function OrdersPage() {
         )}
 
         <div className="flex flex-col gap-2">
-          {visibleOrders.length === 0 && (
+          {orders.length === 0 && (
             <div className="empty-state">
               No orders found for this filter.
             </div>
@@ -341,7 +355,7 @@ export default function OrdersPage() {
             </div>
           )}
 
-          {visibleOrders.map((order) => {
+          {orders.map((order) => {
             const meta = PLATFORM_META[order.platform as PlatformKey];
             const Icon = meta?.icon;
 
@@ -418,6 +432,40 @@ export default function OrdersPage() {
               </div>
             );
           })}
+
+          <div className="flex items-center justify-between gap-3 pt-2">
+            <span className="text-xs text-[#8b8fa3]">
+              Page {page} · {total} total orders
+            </span>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={ordersLoading || loading || !hasPrev}
+                onClick={() => {
+                  const nextPage = Math.max(1, page - 1);
+                  setPage(nextPage);
+                  void loadOrders({ page: nextPage, status: statusFilter });
+                }}
+              >
+                Previous
+              </button>
+
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={ordersLoading || loading || !hasNext}
+                onClick={() => {
+                  const nextPage = page + 1;
+                  setPage(nextPage);
+                  void loadOrders({ page: nextPage, status: statusFilter });
+                }}
+              >
+                Next
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

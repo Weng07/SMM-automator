@@ -194,17 +194,40 @@ export async function GET(req: NextRequest) {
   const { supabaseAdmin } = await import("@/lib/supabase");
   const supabase = supabaseAdmin();
   const { searchParams } = new URL(req.url);
-  const limit = Number(searchParams.get("limit") ?? "50");
+  const parsedLimit = Number(searchParams.get("limit") ?? "25");
+  const parsedPage = Number(searchParams.get("page") ?? "1");
+  const rawStatus = (searchParams.get("status") ?? "all").trim().toLowerCase();
 
-  const { data, error } = await supabase
+  const limit = Number.isFinite(parsedLimit)
+    ? Math.max(1, Math.min(parsedLimit, 100))
+    : 25;
+  const page = Number.isFinite(parsedPage) ? Math.max(1, parsedPage) : 1;
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  let query = supabase
     .from("orders")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(limit);
+    .select("*", { count: "exact" })
+    .order("created_at", { ascending: false });
+
+  if (["submitted", "pending", "failed"].includes(rawStatus)) {
+    query = query.eq("status", rawStatus);
+  }
+
+  const { data, error, count } = await query.range(from, to);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ orders: data });
+  const total = count ?? 0;
+
+  return NextResponse.json({
+    orders: data ?? [],
+    page,
+    limit,
+    total,
+    hasPrev: page > 1,
+    hasNext: from + (data?.length ?? 0) < total,
+  });
 }
 
 export async function POST(req: NextRequest) {
