@@ -414,6 +414,7 @@ export default function OrdersPage() {
                         {service.error && <AlertTriangle size={11} />}
                         {service.service_type} · {service.quantity}
                         {service.provider_name ? ` · ${service.provider_name}` : ""}
+                        {service.debug_slot_decision ? ` · ${service.debug_slot_decision}` : ""}
                       </span>
                     );
                   })}

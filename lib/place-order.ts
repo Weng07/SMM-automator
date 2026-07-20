@@ -258,7 +258,10 @@ function selectPresetForServiceType(params: {
   });
 
   if (byMode.length === 0) {
-    return null;
+    return {
+      preset: null,
+      debugSlotDecision: params.useFallback ? "no_fallback_slots_configured" : "no_primary_slots_configured",
+    };
   }
 
   const filteredByServiceId = byMode.filter((preset) => {
@@ -276,7 +279,10 @@ function selectPresetForServiceType(params: {
   });
 
   if (filteredByServiceId.length === 0) {
-    return null;
+    return {
+      preset: null,
+      debugSlotDecision: "no_eligible_slots_after_service_id_exclusions",
+    };
   }
 
   const withKeywords = filteredByServiceId.filter((preset) =>
@@ -304,18 +310,33 @@ function selectPresetForServiceType(params: {
   );
 
   if (keywordMatched.length > 0) {
-    return pickShuffledSlot({
+    const chosenPreset = pickShuffledSlot({
       candidates: keywordMatched as Array<{ slot_index?: number }>,
       seed: `${params.platform}:${params.serviceType}:${params.link}:${params.useFallback ? "fallback" : "primary"}`,
     }) as Record<string, unknown> | null;
+
+    return {
+      preset: chosenPreset,
+      debugSlotDecision: `keyword_match_shuffled:${String((chosenPreset as { slot_index?: unknown } | null)?.slot_index ?? 1)}/${keywordMatched.length}`,
+    };
   }
 
-  return ([...noKeywordSlots]
-    .sort(
-      (a, b) =>
-        (Number((a as { slot_index?: unknown }).slot_index) || 1) -
-        (Number((b as { slot_index?: unknown }).slot_index) || 1)
-    )[0] as Record<string, unknown> | undefined) ?? null;
+  if (noKeywordSlots.length > 0) {
+    const chosenPreset = pickShuffledSlot({
+      candidates: noKeywordSlots as Array<{ slot_index?: number }>,
+      seed: `${params.platform}:${params.serviceType}:${params.link}:${params.useFallback ? "fallback" : "primary"}`,
+    }) as Record<string, unknown> | null;
+
+    return {
+      preset: chosenPreset,
+      debugSlotDecision: `no_keyword_shuffled:${String((chosenPreset as { slot_index?: unknown } | null)?.slot_index ?? 1)}/${noKeywordSlots.length}`,
+    };
+  }
+
+  return {
+    preset: null,
+    debugSlotDecision: withKeywords.length > 0 ? "keyword_slots_present_but_no_match" : "no_eligible_slots",
+  };
 }
 
 async function findOldestAvailablePoolForCategories(params: {
@@ -597,7 +618,7 @@ export async function submitOrderForLink(params: {
   for (const [serviceType, servicePresets] of groupedPresets.entries()) {
     const normalizedType = normalizeServiceCategory(serviceType);
     const useFallback = fallbackServiceTypes.has(normalizedType);
-    const selectedPreset = selectPresetForServiceType({
+    const selection = selectPresetForServiceType({
       servicePresets,
       link: params.link,
       platform: params.platform,
@@ -605,6 +626,8 @@ export async function submitOrderForLink(params: {
       useFallback,
       excludedServiceIds: avoidedIdsByType[normalizedType],
     });
+    const selectedPreset = selection.preset;
+    const debugSlotDecision = selection.debugSlotDecision;
 
     if (!selectedPreset) {
       if (useFallback) {
@@ -614,6 +637,7 @@ export async function submitOrderForLink(params: {
           panel_service_id: null,
           socpanel_service_id: null,
           is_fallback: true,
+          debug_slot_decision: debugSlotDecision,
           error: "No fallback slot matched this link (or all fallback service IDs were excluded).",
         });
       }
@@ -668,6 +692,7 @@ export async function submitOrderForLink(params: {
         panel_service_id: serviceId,
         socpanel_service_id: serviceId,
         quantity: effectiveQuantity,
+        debug_slot_decision: debugSlotDecision,
         error: "Duplicate order",
       });
 
@@ -685,6 +710,7 @@ export async function submitOrderForLink(params: {
         panel_service_id: null,
         socpanel_service_id: null,
         quantity: effectiveQuantity,
+        debug_slot_decision: debugSlotDecision,
         error: "No panel service ID mapped for this preset yet.",
       });
       continue;
@@ -701,6 +727,7 @@ export async function submitOrderForLink(params: {
         panel_service_id: serviceId,
         socpanel_service_id: serviceId,
         quantity: effectiveQuantity,
+        debug_slot_decision: debugSlotDecision,
         error: "Quantity must be greater than 0.",
       });
       continue;
@@ -722,6 +749,7 @@ export async function submitOrderForLink(params: {
             panel_service_id: serviceId,
             socpanel_service_id: serviceId,
             quantity: effectiveQuantity,
+            debug_slot_decision: debugSlotDecision,
             skipped: true,
             error: "Comments are disabled for this platform.",
           });
@@ -750,6 +778,7 @@ export async function submitOrderForLink(params: {
               panel_service_id: serviceId,
               socpanel_service_id: serviceId,
               quantity: effectiveQuantity,
+              debug_slot_decision: debugSlotDecision,
               error: "Selected comment pool is invalid for this platform.",
             });
             continue;
@@ -770,6 +799,7 @@ export async function submitOrderForLink(params: {
               panel_service_id: serviceId,
               socpanel_service_id: serviceId,
               quantity: effectiveQuantity,
+              debug_slot_decision: debugSlotDecision,
               error: `Selected pool category is ${poolRow.category ?? "uncategorized"} and does not match this slot.`,
             });
             continue;
@@ -798,6 +828,7 @@ export async function submitOrderForLink(params: {
               panel_service_id: serviceId,
               socpanel_service_id: serviceId,
               quantity: effectiveQuantity,
+              debug_slot_decision: debugSlotDecision,
               error: `No unused comment pool found for ${params.platform}${categoryHint}.`,
             });
             continue;
@@ -819,6 +850,7 @@ export async function submitOrderForLink(params: {
             panel_service_id: serviceId,
             socpanel_service_id: serviceId,
             quantity: effectiveQuantity,
+              debug_slot_decision: debugSlotDecision,
             error: `Only ${picked.length} unused comments left in the pool (needed ${effectiveQuantity}).`,
           });
           continue;
@@ -852,7 +884,7 @@ export async function submitOrderForLink(params: {
           debug_effective_categories: isCommentServiceType(serviceType)
             ? effectiveKeywordsForResult
             : undefined,
-          debug_slot_decision: undefined,
+          debug_slot_decision: debugSlotDecision,
         });
       } else {
         results.push({
@@ -872,7 +904,7 @@ export async function submitOrderForLink(params: {
           debug_effective_categories: isCommentServiceType(serviceType)
             ? effectiveKeywordsForResult
             : undefined,
-          debug_slot_decision: undefined,
+          debug_slot_decision: debugSlotDecision,
         });
       }
     } catch (error) {
@@ -886,6 +918,7 @@ export async function submitOrderForLink(params: {
         panel_service_id: serviceId,
         socpanel_service_id: serviceId,
         quantity: effectiveQuantity,
+        debug_slot_decision: debugSlotDecision,
         error: error instanceof Error ? error.message : "Unknown error placing order.",
       });
     }

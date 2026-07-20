@@ -25,3 +25,6 @@
 - Fixed Orders failed-tab visibility by moving status filtering server-side (not limited to cached latest 25 rows).
 - Added Orders previous/next pagination so older completed/failed history is browsable.
 - Fixed pagination regression where clicking Next returned to page 1 by removing page-coupled effect triggers.
+- Updated slot routing so duplicate no-keyword presets also shuffle deterministically per link, keeping exactly one selected service per link/category.
+- Added slot-selection debug output to order results and surfaced it in the Orders page for quick verification.
+- Prepared release v1.3.14 and push/deploy pipeline.
