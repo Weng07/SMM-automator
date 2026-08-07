@@ -41,3 +41,6 @@
 - Gated bulk low-balance retry to today's orders only: both the bulk sync pass and eligible-order scan now use today's date window.
 - Updated Orders UI copy to "Retry today's low balance" and feedback text to explicitly report today's synced/scanned/retried counts.
 - No new SQL migration.
+- Optimized today's bulk low-balance retry speed: the pre-retry sync step now scopes to today's `failed|pending` orders only and skips fallback auto-reorder side effects on this path.
+- This keeps retry behavior focused on today's low-balance submission targets instead of scanning/syncing unrelated statuses.
+- No new SQL migration.

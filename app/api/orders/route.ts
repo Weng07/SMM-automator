@@ -322,6 +322,8 @@ export async function POST(req: NextRequest) {
         limit,
         createdAtGte: todayStart.toISOString(),
         createdAtLt: tomorrowStart.toISOString(),
+        statusIn: ["failed", "pending"],
+        enableFallbackReorders: false,
       });
 
       const { supabaseAdmin } = await import("@/lib/supabase");
@@ -506,9 +508,12 @@ async function syncOrdersWithProvider(params: {
   orderId?: string;
   createdAtGte?: string;
   createdAtLt?: string;
+  statusIn?: string[];
+  enableFallbackReorders?: boolean;
 }) {
   const { supabaseAdmin } = await import("@/lib/supabase");
   const supabase = supabaseAdmin();
+  const shouldRunFallbackReorders = params.enableFallbackReorders !== false;
 
   let query = supabase
     .from("orders")
@@ -518,6 +523,10 @@ async function syncOrdersWithProvider(params: {
   if (params.orderId && params.orderId.trim()) {
     query = query.eq("id", params.orderId.trim());
   } else {
+    if (params.statusIn && params.statusIn.length > 0) {
+      query = query.in("status", params.statusIn);
+    }
+
     if (params.createdAtGte) {
       query = query.gte("created_at", params.createdAtGte);
     }
@@ -596,7 +605,11 @@ async function syncOrdersWithProvider(params: {
         canceledServices += 1;
         orderChanged = true;
 
-        if (typeof service.service_type === "string" && service.service_type.trim()) {
+        if (
+          shouldRunFallbackReorders &&
+          typeof service.service_type === "string" &&
+          service.service_type.trim()
+        ) {
           const normalizedType = service.service_type.trim();
           canceledServiceTypes.add(normalizedType);
 
@@ -670,7 +683,7 @@ async function syncOrdersWithProvider(params: {
 
     updatedOrders += 1;
 
-    if (canceledServiceTypes.size > 0) {
+    if (shouldRunFallbackReorders && canceledServiceTypes.size > 0) {
       try {
         const avoidServiceIdsByType = Object.fromEntries(
           Object.entries(canceledServiceIdsByType).map(([serviceType, ids]) => [
