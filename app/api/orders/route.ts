@@ -313,7 +313,16 @@ export async function POST(req: NextRequest) {
         ? Math.max(1, Math.min(parsedLimit, 1000))
         : 200;
 
-      const syncResult = await syncOrdersWithProvider({ limit });
+      const todayStart = new Date();
+      todayStart.setUTCHours(0, 0, 0, 0);
+      const tomorrowStart = new Date(todayStart);
+      tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+
+      const syncResult = await syncOrdersWithProvider({
+        limit,
+        createdAtGte: todayStart.toISOString(),
+        createdAtLt: tomorrowStart.toISOString(),
+      });
 
       const { supabaseAdmin } = await import("@/lib/supabase");
       const supabase = supabaseAdmin();
@@ -321,6 +330,8 @@ export async function POST(req: NextRequest) {
         .from("orders")
         .select("id, services_ordered, created_at")
         .in("status", ["failed", "pending"])
+        .gte("created_at", todayStart.toISOString())
+        .lt("created_at", tomorrowStart.toISOString())
         .order("created_at", { ascending: false })
         .limit(limit);
 
@@ -363,6 +374,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         ok: true,
         retryAllLowBalance: true,
+        todayOnly: true,
         scannedOrders,
         eligibleOrders,
         retriedOrders,
@@ -492,6 +504,8 @@ function getLowBalanceRetryServiceTypes(services: ServiceEntry[]): string[] {
 async function syncOrdersWithProvider(params: {
   limit: number;
   orderId?: string;
+  createdAtGte?: string;
+  createdAtLt?: string;
 }) {
   const { supabaseAdmin } = await import("@/lib/supabase");
   const supabase = supabaseAdmin();
@@ -504,6 +518,14 @@ async function syncOrdersWithProvider(params: {
   if (params.orderId && params.orderId.trim()) {
     query = query.eq("id", params.orderId.trim());
   } else {
+    if (params.createdAtGte) {
+      query = query.gte("created_at", params.createdAtGte);
+    }
+
+    if (params.createdAtLt) {
+      query = query.lt("created_at", params.createdAtLt);
+    }
+
     query = query.limit(params.limit);
   }
 

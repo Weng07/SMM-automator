@@ -247,7 +247,7 @@ export default function OrdersPage() {
       }
 
       setFeedback(
-        `Synced first, scanned ${data.scannedOrders ?? 0} order${(data.scannedOrders ?? 0) === 1 ? "" : "s"}, found ${data.eligibleOrders ?? 0} low-balance order${(data.eligibleOrders ?? 0) === 1 ? "" : "s"}, retried ${data.retriedOrders ?? 0} order${(data.retriedOrders ?? 0) === 1 ? "" : "s"} (${data.retriedServices ?? 0} service type${(data.retriedServices ?? 0) === 1 ? "" : "s"})${(data.failedRetries ?? 0) > 0 ? `, ${data.failedRetries} failed` : ""}.`
+        `Synced today's orders first, scanned ${data.scannedOrders ?? 0} order${(data.scannedOrders ?? 0) === 1 ? "" : "s"}, found ${data.eligibleOrders ?? 0} low-balance order${(data.eligibleOrders ?? 0) === 1 ? "" : "s"}, retried ${data.retriedOrders ?? 0} order${(data.retriedOrders ?? 0) === 1 ? "" : "s"} (${data.retriedServices ?? 0} service type${(data.retriedServices ?? 0) === 1 ? "" : "s"})${(data.failedRetries ?? 0) > 0 ? `, ${data.failedRetries} failed` : ""}.`
       );
 
       setLoading(true);
@@ -342,8 +342,8 @@ export default function OrdersPage() {
                 className={retryingLowBalanceAll ? "animate-spin" : ""}
               />
               {retryingLowBalanceAll
-                ? "Retrying low balance..."
-                : "Retry all low balance"}
+                ? "Retrying today's low balance..."
+                : "Retry today's low balance"}
             </button>
 
             <button

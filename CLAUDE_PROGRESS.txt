@@ -38,3 +38,6 @@
 - Added one-click global retry flow for low-balance failures: new Orders action retries all eligible low-balance failed services across recent orders after sync-first provider refresh.
 - Added top-level "Retry all low balance" button in Orders UI with summary feedback (scanned/eligible/retried/failed counts) and disabled per-order retry while bulk retry runs.
 - No new SQL migration.
+- Gated bulk low-balance retry to today's orders only: both the bulk sync pass and eligible-order scan now use today's date window.
+- Updated Orders UI copy to "Retry today's low balance" and feedback text to explicitly report today's synced/scanned/retried counts.
+- No new SQL migration.
