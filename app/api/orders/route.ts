@@ -281,12 +281,7 @@ export async function POST(req: NextRequest) {
       const services = Array.isArray(orderRow.services_ordered)
         ? (orderRow.services_ordered as ServiceEntry[])
         : [];
-      const retryServiceTypes = [...new Set(
-        services
-          .filter((service) => !service.skipped && isLowBalanceFailureMessage(service.error))
-          .map((service) => String(service.service_type ?? "").trim())
-          .filter(Boolean)
-      )];
+      const retryServiceTypes = getLowBalanceRetryServiceTypes(services);
 
       if (retryServiceTypes.length === 0) {
         return NextResponse.json({
@@ -308,6 +303,71 @@ export async function POST(req: NextRequest) {
         retry: true,
         orderId: result.orderId,
         retriedServiceTypes: retryServiceTypes,
+        syncResult,
+      });
+    }
+
+    if (action === "retry_low_balance_all") {
+      const parsedLimit = Number(body.limit ?? "200");
+      const limit = Number.isFinite(parsedLimit)
+        ? Math.max(1, Math.min(parsedLimit, 1000))
+        : 200;
+
+      const syncResult = await syncOrdersWithProvider({ limit });
+
+      const { supabaseAdmin } = await import("@/lib/supabase");
+      const supabase = supabaseAdmin();
+      const { data: orders, error: ordersError } = await supabase
+        .from("orders")
+        .select("id, services_ordered, created_at")
+        .in("status", ["failed", "pending"])
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      if (ordersError) {
+        return NextResponse.json({ error: ordersError.message }, { status: 500 });
+      }
+
+      let scannedOrders = 0;
+      let eligibleOrders = 0;
+      let retriedOrders = 0;
+      let failedRetries = 0;
+      let retriedServices = 0;
+
+      for (const order of orders ?? []) {
+        scannedOrders += 1;
+
+        const services = Array.isArray(order.services_ordered)
+          ? (order.services_ordered as ServiceEntry[])
+          : [];
+        const retryServiceTypes = getLowBalanceRetryServiceTypes(services);
+
+        if (retryServiceTypes.length === 0) {
+          continue;
+        }
+
+        eligibleOrders += 1;
+
+        try {
+          await retryOrderForId(order.id, {
+            retryOnlyServiceTypes: retryServiceTypes,
+          });
+
+          retriedOrders += 1;
+          retriedServices += retryServiceTypes.length;
+        } catch {
+          failedRetries += 1;
+        }
+      }
+
+      return NextResponse.json({
+        ok: true,
+        retryAllLowBalance: true,
+        scannedOrders,
+        eligibleOrders,
+        retriedOrders,
+        retriedServices,
+        failedRetries,
         syncResult,
       });
     }
@@ -418,6 +478,15 @@ function isLowBalanceFailureMessage(error: unknown): boolean {
   return /low\s*balance|insufficient\s*balance|insufficient\s*funds|not\s*enough\s*funds|lack\s*of\s*funds|provider_balance|balance\s*too\s*low/.test(
     normalized
   );
+}
+
+function getLowBalanceRetryServiceTypes(services: ServiceEntry[]): string[] {
+  return [...new Set(
+    services
+      .filter((service) => !service.skipped && isLowBalanceFailureMessage(service.error))
+      .map((service) => String(service.service_type ?? "").trim())
+      .filter(Boolean)
+  )];
 }
 
 async function syncOrdersWithProvider(params: {

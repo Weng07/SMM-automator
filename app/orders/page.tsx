@@ -84,6 +84,7 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null);
+  const [retryingLowBalanceAll, setRetryingLowBalanceAll] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
@@ -228,6 +229,41 @@ export default function OrdersPage() {
     }
   }
 
+  async function retryAllLowBalance() {
+    setRetryingLowBalanceAll(true);
+    setFeedback(null);
+
+    try {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retry_low_balance_all", limit: 200 }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Bulk retry failed.");
+      }
+
+      setFeedback(
+        `Synced first, scanned ${data.scannedOrders ?? 0} order${(data.scannedOrders ?? 0) === 1 ? "" : "s"}, found ${data.eligibleOrders ?? 0} low-balance order${(data.eligibleOrders ?? 0) === 1 ? "" : "s"}, retried ${data.retriedOrders ?? 0} order${(data.retriedOrders ?? 0) === 1 ? "" : "s"} (${data.retriedServices ?? 0} service type${(data.retriedServices ?? 0) === 1 ? "" : "s"})${(data.failedRetries ?? 0) > 0 ? `, ${data.failedRetries} failed` : ""}.`
+      );
+
+      setLoading(true);
+      try {
+        await loadOrders({ page, status: statusFilter });
+        await loadStats();
+      } finally {
+        setLoading(false);
+      }
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "Bulk retry failed.");
+    } finally {
+      setRetryingLowBalanceAll(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-7">
       <section className="panel" style={{ padding: "22px" }}>
@@ -293,6 +329,23 @@ export default function OrdersPage() {
           <div className="text-sm font-semibold">Order list</div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="btn-secondary flex items-center gap-2"
+              onClick={() => {
+                void retryAllLowBalance();
+              }}
+              disabled={retryingLowBalanceAll || syncing || loading}
+            >
+              <RefreshCw
+                size={14}
+                className={retryingLowBalanceAll ? "animate-spin" : ""}
+              />
+              {retryingLowBalanceAll
+                ? "Retrying low balance..."
+                : "Retry all low balance"}
+            </button>
+
             <button
               type="button"
               className="btn-secondary flex items-center gap-2"
@@ -438,7 +491,7 @@ export default function OrdersPage() {
                     type="button"
                     className="btn-secondary self-start"
                     onClick={() => retryOrder(order.id)}
-                    disabled={retryingOrderId === order.id || syncing}
+                    disabled={retryingOrderId === order.id || syncing || retryingLowBalanceAll}
                   >
                     {retryingOrderId === order.id ? "Retrying..." : "Retry failed (sync first)"}
                   </button>

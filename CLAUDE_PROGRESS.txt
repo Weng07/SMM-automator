@@ -35,3 +35,6 @@
 - Added retry response details for UI feedback (`retry=false` no-op case and `retriedServiceTypes` list), and updated retry button/feedback copy in Orders page.
 - Fixed fallback inheritance when fallback slots have blank quantity/keywords by inheriting from matching primary-slot selection for the same link/service type, preventing zero-quantity failures ("Quantity must be greater than 0").
 - No new SQL migration.
+- Added one-click global retry flow for low-balance failures: new Orders action retries all eligible low-balance failed services across recent orders after sync-first provider refresh.
+- Added top-level "Retry all low balance" button in Orders UI with summary feedback (scanned/eligible/retried/failed counts) and disabled per-order retry while bulk retry runs.
+- No new SQL migration.
