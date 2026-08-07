@@ -429,6 +429,7 @@ export async function retryOrderForId(
   orderId: string,
   options?: {
     fallbackForFailedServices?: boolean;
+    retryOnlyServiceTypes?: string[];
     forceFallbackServiceTypes?: string[];
     avoidServiceIdsByType?: Record<string, string[]>;
     fallbackDefaultsByType?: Record<string, FallbackDefaults>;
@@ -448,6 +449,9 @@ export async function retryOrderForId(
 
   const forceFallbackTypes = new Set(
     options?.forceFallbackServiceTypes?.map((value) => String(value)) ?? []
+  );
+  const retryOnlyTypes = new Set(
+    options?.retryOnlyServiceTypes?.map((value) => String(value)) ?? []
   );
 
   const avoidServiceIdsByType: Record<string, string[]> = {
@@ -498,6 +502,7 @@ export async function retryOrderForId(
     link: orderRow.link,
     source: orderRow.source ?? "retry",
     commentPoolId: orderRow.comment_pool_id ?? null,
+    includeServiceTypes: [...retryOnlyTypes],
     preferFallbackForServiceTypes: [...forceFallbackTypes],
     avoidServiceIdsByType,
     fallbackDefaultsByType,
@@ -510,6 +515,7 @@ export async function submitOrderForLink(params: {
   link: string;
   source?: string;
   commentPoolId?: string | null;
+  includeServiceTypes?: string[];
   preferFallbackForServiceTypes?: string[];
   avoidServiceIdsByType?: Record<string, string[]>;
   fallbackDefaultsByType?: Record<string, FallbackDefaults>;
@@ -569,6 +575,33 @@ export async function submitOrderForLink(params: {
     );
   }
 
+  const groupedPresets = new Map<string, Array<Record<string, unknown>>>();
+  const includedServiceTypes = normalizeServiceTypeList(params.includeServiceTypes);
+  const fallbackServiceTypes = normalizeServiceTypeList(
+    params.preferFallbackForServiceTypes
+  );
+  const avoidedIdsByType = normalizeServiceIdMap(params.avoidServiceIdsByType);
+  const fallbackDefaultsByType = normalizeFallbackDefaultsByType(
+    params.fallbackDefaultsByType
+  );
+
+  for (const preset of filteredPresets) {
+    const serviceType = String(preset.service_type);
+    const normalizedType = normalizeServiceCategory(serviceType);
+
+    if (includedServiceTypes.size > 0 && !includedServiceTypes.has(normalizedType)) {
+      continue;
+    }
+
+    const existing = groupedPresets.get(serviceType) ?? [];
+    existing.push(preset as Record<string, unknown>);
+    groupedPresets.set(serviceType, existing);
+  }
+
+  if (groupedPresets.size === 0) {
+    throw new Error("No matching service slots found for this retry.");
+  }
+
   const { data: orderRow, error: orderErr } = await supabase
     .from("orders")
     .insert({
@@ -597,22 +630,6 @@ export async function submitOrderForLink(params: {
       skipped: true,
       error: "Instagram views skipped because this link is not a Reel.",
     });
-  }
-
-  const groupedPresets = new Map<string, Array<Record<string, unknown>>>();
-  const fallbackServiceTypes = normalizeServiceTypeList(
-    params.preferFallbackForServiceTypes
-  );
-  const avoidedIdsByType = normalizeServiceIdMap(params.avoidServiceIdsByType);
-  const fallbackDefaultsByType = normalizeFallbackDefaultsByType(
-    params.fallbackDefaultsByType
-  );
-
-  for (const preset of filteredPresets) {
-    const serviceType = String(preset.service_type);
-    const existing = groupedPresets.get(serviceType) ?? [];
-    existing.push(preset as Record<string, unknown>);
-    groupedPresets.set(serviceType, existing);
   }
 
   for (const [serviceType, servicePresets] of groupedPresets.entries()) {
@@ -657,17 +674,45 @@ export async function submitOrderForLink(params: {
       quantity: number;
     };
 
+    const primaryFallbackSource = useFallback
+      ? selectPresetForServiceType({
+          servicePresets,
+          link: params.link,
+          platform: params.platform,
+          serviceType,
+          useFallback: false,
+        }).preset
+      : null;
+    const primaryFallbackSourcePreset = primaryFallbackSource as
+      | {
+          quantity?: number;
+          keywords?: unknown;
+          comment_categories?: unknown;
+        }
+      | null;
+
     const fallbackDefaults = fallbackDefaultsByType[normalizedType];
     const presetKeywords = normalizeKeywords(
       preset.keywords ?? preset.comment_categories
     );
+    const primaryKeywords = normalizeKeywords(
+      primaryFallbackSourcePreset?.keywords ??
+        primaryFallbackSourcePreset?.comment_categories
+    );
     const effectiveKeywords =
       useFallback && presetKeywords.length === 0
-        ? normalizeKeywords(fallbackDefaults?.keywords ?? [])
+        ? normalizeKeywords(fallbackDefaults?.keywords ?? primaryKeywords)
         : presetKeywords;
     const effectiveQuantity =
       useFallback && Number(preset.quantity) <= 0
-        ? Math.max(0, Number(fallbackDefaults?.quantity ?? 0))
+        ? Math.max(
+            0,
+            Number(
+              fallbackDefaults?.quantity ??
+                primaryFallbackSourcePreset?.quantity ??
+                0
+            )
+          )
         : Number(preset.quantity);
 
     const serviceId = preset.panel_service_id || preset.socpanel_service_id || null;

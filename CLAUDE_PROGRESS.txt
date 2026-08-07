@@ -28,3 +28,10 @@
 - Updated slot routing so duplicate no-keyword presets also shuffle deterministically per link, keeping exactly one selected service per link/category.
 - Added slot-selection debug output to order results and surfaced it in the Orders page for quick verification.
 - Prepared release v1.3.14 and push/deploy pipeline.
+
+2026-08-07
+- Updated Orders retry behavior to sync-first: clicking Retry now syncs provider state for the target order before resubmission.
+- Retry now resubmits only service types that failed due to low provider balance/funds, instead of forcing fallback for all failed services.
+- Added retry response details for UI feedback (`retry=false` no-op case and `retriedServiceTypes` list), and updated retry button/feedback copy in Orders page.
+- Fixed fallback inheritance when fallback slots have blank quantity/keywords by inheriting from matching primary-slot selection for the same link/service type, preventing zero-quantity failures ("Quantity must be greater than 0").
+- No new SQL migration.

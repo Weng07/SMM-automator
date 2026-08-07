@@ -236,205 +236,17 @@ export async function POST(req: NextRequest) {
     const { action, orderId, tier, link, links, commentPoolId } = body;
 
     if (action === "sync") {
-      const { supabaseAdmin } = await import("@/lib/supabase");
-      const supabase = supabaseAdmin();
-
       const parsedLimit = Number(body.limit ?? "25");
       const limit = Number.isFinite(parsedLimit)
         ? Math.max(1, Math.min(parsedLimit, 200))
         : 25;
 
-      let query = supabase
-        .from("orders")
-        .select("id, status, services_ordered, created_at")
-        .order("created_at", { ascending: false });
-
-      if (typeof orderId === "string" && orderId.trim()) {
-        query = query.eq("id", orderId.trim());
-      } else {
-        query = query.limit(limit);
-      }
-
-      const { data: orders, error: ordersError } = await query;
-
-      if (ordersError) {
-        return NextResponse.json({ error: ordersError.message }, { status: 500 });
-      }
-
-      let checkedOrders = 0;
-      let updatedOrders = 0;
-      let canceledServices = 0;
-      let removedDuplicateServices = 0;
-      let deletedOrders = 0;
-      let fallbackReordersQueued = 0;
-      let fallbackReordersFailed = 0;
-
-      for (const order of orders ?? []) {
-        checkedOrders += 1;
-
-        const services = Array.isArray(order.services_ordered)
-          ? (order.services_ordered as ServiceEntry[])
-          : [];
-
-        if (services.length === 0) {
-          continue;
-        }
-
-        let orderChanged = false;
-        const nextServices: ServiceEntry[] = [];
-        const canceledServiceTypes = new Set<string>();
-        const canceledServiceIdsByType: Record<string, Set<string>> = {};
-        const fallbackDefaultsByType: Record<
-          string,
-          { quantity?: number; keywords?: string[] }
-        > = {};
-
-        for (const service of services) {
-          if (isDuplicateSkippedService(service)) {
-            removedDuplicateServices += 1;
-            orderChanged = true;
-            continue;
-          }
-
-          const providerOrderId =
-            service.panel_order_id ?? service.socpanel_order_id;
-          const providerId =
-            typeof service.api_provider_id === "string"
-              ? service.api_provider_id
-              : null;
-
-          if (service.skipped || !providerOrderId) {
-            nextServices.push(service);
-            continue;
-          }
-
-          try {
-            const statusPayload = await fetchOrderStatus(
-              String(providerOrderId),
-              providerId
-            );
-
-            if (!isCanceledOnProviderSide(statusPayload)) {
-              nextServices.push(service);
-              continue;
-            }
-
-            canceledServices += 1;
-            orderChanged = true;
-
-            if (typeof service.service_type === "string" && service.service_type.trim()) {
-              const normalizedType = service.service_type.trim();
-              canceledServiceTypes.add(normalizedType);
-
-              const canceledServiceId = String(
-                service.panel_service_id ?? service.socpanel_service_id ?? ""
-              ).trim();
-
-              if (canceledServiceId) {
-                const existing = canceledServiceIdsByType[normalizedType] ?? new Set<string>();
-                existing.add(canceledServiceId);
-                canceledServiceIdsByType[normalizedType] = existing;
-              }
-
-              fallbackDefaultsByType[normalizedType] = {
-                quantity:
-                  typeof service.quantity === "number" && Number.isFinite(service.quantity)
-                    ? Number(service.quantity)
-                    : undefined,
-                keywords: Array.isArray(service.keywords)
-                  ? service.keywords
-                      .map((value) => String(value).trim().toLowerCase())
-                      .filter(Boolean)
-                  : [],
-              };
-            }
-
-            nextServices.push({
-              ...service,
-              panel_order_id: null,
-              socpanel_order_id: null,
-              status: "canceled",
-              error: "Canceled on provider side.",
-            });
-          } catch {
-            // Do not block sync because one provider status request failed.
-            nextServices.push(service);
-          }
-        }
-
-        if (!orderChanged) {
-          continue;
-        }
-
-        if (nextServices.length === 0) {
-          const { error: deleteError } = await supabase
-            .from("orders")
-            .delete()
-            .eq("id", order.id);
-
-          if (deleteError) {
-            return NextResponse.json(
-              { error: deleteError.message },
-              { status: 500 }
-            );
-          }
-
-          deletedOrders += 1;
-          continue;
-        }
-
-        const nextStatus = normalizeOrderStatus(nextServices);
-
-        const { error: updateError } = await supabase
-          .from("orders")
-          .update({
-            services_ordered: nextServices,
-            status: nextStatus,
-          })
-          .eq("id", order.id);
-
-        if (updateError) {
-          return NextResponse.json(
-            { error: updateError.message },
-            { status: 500 }
-          );
-        }
-
-        updatedOrders += 1;
-
-        if (canceledServiceTypes.size > 0) {
-          try {
-            const avoidServiceIdsByType = Object.fromEntries(
-              Object.entries(canceledServiceIdsByType).map(([serviceType, ids]) => [
-                serviceType,
-                [...ids],
-              ])
-            );
-
-            await retryOrderForId(order.id, {
-              forceFallbackServiceTypes: [...canceledServiceTypes],
-              avoidServiceIdsByType,
-              fallbackDefaultsByType,
-            });
-
-            fallbackReordersQueued += 1;
-          } catch {
-            fallbackReordersFailed += 1;
-          }
-        }
-      }
-
-      return NextResponse.json({
-        ok: true,
-        sync: true,
-        checkedOrders,
-        updatedOrders,
-        deletedOrders,
-        canceledServices,
-        removedDuplicateServices,
-        fallbackReordersQueued,
-        fallbackReordersFailed,
+      const syncResult = await syncOrdersWithProvider({
+        limit,
+        orderId: typeof orderId === "string" ? orderId : undefined,
       });
+
+      return NextResponse.json(syncResult);
     }
 
     if (action === "retry") {
@@ -445,10 +257,59 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const result = await retryOrderForId(orderId, {
-        fallbackForFailedServices: true,
+      const trimmedOrderId = orderId.trim();
+      const syncResult = await syncOrdersWithProvider({
+        limit: 1,
+        orderId: trimmedOrderId,
       });
-      return NextResponse.json({ ok: true, retry: true, orderId: result.orderId });
+
+      const { supabaseAdmin } = await import("@/lib/supabase");
+      const supabase = supabaseAdmin();
+      const { data: orderRow, error: orderErr } = await supabase
+        .from("orders")
+        .select("services_ordered")
+        .eq("id", trimmedOrderId)
+        .single();
+
+      if (orderErr || !orderRow) {
+        return NextResponse.json(
+          { error: "Order not found after sync." },
+          { status: 404 }
+        );
+      }
+
+      const services = Array.isArray(orderRow.services_ordered)
+        ? (orderRow.services_ordered as ServiceEntry[])
+        : [];
+      const retryServiceTypes = [...new Set(
+        services
+          .filter((service) => !service.skipped && isLowBalanceFailureMessage(service.error))
+          .map((service) => String(service.service_type ?? "").trim())
+          .filter(Boolean)
+      )];
+
+      if (retryServiceTypes.length === 0) {
+        return NextResponse.json({
+          ok: true,
+          retry: false,
+          orderId: trimmedOrderId,
+          message:
+            "Sync completed. No low-balance failed services were found to retry.",
+          syncResult,
+        });
+      }
+
+      const result = await retryOrderForId(trimmedOrderId, {
+        retryOnlyServiceTypes: retryServiceTypes,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        retry: true,
+        orderId: result.orderId,
+        retriedServiceTypes: retryServiceTypes,
+        syncResult,
+      });
     }
 
     const rawLinks =
@@ -542,4 +403,213 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function isLowBalanceFailureMessage(error: unknown): boolean {
+  if (typeof error !== "string") {
+    return false;
+  }
+
+  const normalized = error.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /low\s*balance|insufficient\s*balance|insufficient\s*funds|not\s*enough\s*funds|lack\s*of\s*funds|provider_balance|balance\s*too\s*low/.test(
+    normalized
+  );
+}
+
+async function syncOrdersWithProvider(params: {
+  limit: number;
+  orderId?: string;
+}) {
+  const { supabaseAdmin } = await import("@/lib/supabase");
+  const supabase = supabaseAdmin();
+
+  let query = supabase
+    .from("orders")
+    .select("id, status, services_ordered, created_at")
+    .order("created_at", { ascending: false });
+
+  if (params.orderId && params.orderId.trim()) {
+    query = query.eq("id", params.orderId.trim());
+  } else {
+    query = query.limit(params.limit);
+  }
+
+  const { data: orders, error: ordersError } = await query;
+
+  if (ordersError) {
+    throw new Error(ordersError.message);
+  }
+
+  let checkedOrders = 0;
+  let updatedOrders = 0;
+  let canceledServices = 0;
+  let removedDuplicateServices = 0;
+  let deletedOrders = 0;
+  let fallbackReordersQueued = 0;
+  let fallbackReordersFailed = 0;
+
+  for (const order of orders ?? []) {
+    checkedOrders += 1;
+
+    const services = Array.isArray(order.services_ordered)
+      ? (order.services_ordered as ServiceEntry[])
+      : [];
+
+    if (services.length === 0) {
+      continue;
+    }
+
+    let orderChanged = false;
+    const nextServices: ServiceEntry[] = [];
+    const canceledServiceTypes = new Set<string>();
+    const canceledServiceIdsByType: Record<string, Set<string>> = {};
+    const fallbackDefaultsByType: Record<
+      string,
+      { quantity?: number; keywords?: string[] }
+    > = {};
+
+    for (const service of services) {
+      if (isDuplicateSkippedService(service)) {
+        removedDuplicateServices += 1;
+        orderChanged = true;
+        continue;
+      }
+
+      const providerOrderId =
+        service.panel_order_id ?? service.socpanel_order_id;
+      const providerId =
+        typeof service.api_provider_id === "string"
+          ? service.api_provider_id
+          : null;
+
+      if (service.skipped || !providerOrderId) {
+        nextServices.push(service);
+        continue;
+      }
+
+      try {
+        const statusPayload = await fetchOrderStatus(
+          String(providerOrderId),
+          providerId
+        );
+
+        if (!isCanceledOnProviderSide(statusPayload)) {
+          nextServices.push(service);
+          continue;
+        }
+
+        canceledServices += 1;
+        orderChanged = true;
+
+        if (typeof service.service_type === "string" && service.service_type.trim()) {
+          const normalizedType = service.service_type.trim();
+          canceledServiceTypes.add(normalizedType);
+
+          const canceledServiceId = String(
+            service.panel_service_id ?? service.socpanel_service_id ?? ""
+          ).trim();
+
+          if (canceledServiceId) {
+            const existing = canceledServiceIdsByType[normalizedType] ?? new Set<string>();
+            existing.add(canceledServiceId);
+            canceledServiceIdsByType[normalizedType] = existing;
+          }
+
+          fallbackDefaultsByType[normalizedType] = {
+            quantity:
+              typeof service.quantity === "number" && Number.isFinite(service.quantity)
+                ? Number(service.quantity)
+                : undefined,
+            keywords: Array.isArray(service.keywords)
+              ? service.keywords
+                  .map((value) => String(value).trim().toLowerCase())
+                  .filter(Boolean)
+              : [],
+          };
+        }
+
+        nextServices.push({
+          ...service,
+          panel_order_id: null,
+          socpanel_order_id: null,
+          status: "canceled",
+          error: "Canceled on provider side.",
+        });
+      } catch {
+        // Do not block sync because one provider status request failed.
+        nextServices.push(service);
+      }
+    }
+
+    if (!orderChanged) {
+      continue;
+    }
+
+    if (nextServices.length === 0) {
+      const { error: deleteError } = await supabase
+        .from("orders")
+        .delete()
+        .eq("id", order.id);
+
+      if (deleteError) {
+        throw new Error(deleteError.message);
+      }
+
+      deletedOrders += 1;
+      continue;
+    }
+
+    const nextStatus = normalizeOrderStatus(nextServices);
+
+    const { error: updateError } = await supabase
+      .from("orders")
+      .update({
+        services_ordered: nextServices,
+        status: nextStatus,
+      })
+      .eq("id", order.id);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+
+    updatedOrders += 1;
+
+    if (canceledServiceTypes.size > 0) {
+      try {
+        const avoidServiceIdsByType = Object.fromEntries(
+          Object.entries(canceledServiceIdsByType).map(([serviceType, ids]) => [
+            serviceType,
+            [...ids],
+          ])
+        );
+
+        await retryOrderForId(order.id, {
+          forceFallbackServiceTypes: [...canceledServiceTypes],
+          avoidServiceIdsByType,
+          fallbackDefaultsByType,
+        });
+
+        fallbackReordersQueued += 1;
+      } catch {
+        fallbackReordersFailed += 1;
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    sync: true,
+    checkedOrders,
+    updatedOrders,
+    deletedOrders,
+    canceledServices,
+    removedDuplicateServices,
+    fallbackReordersQueued,
+    fallbackReordersFailed,
+  };
 }

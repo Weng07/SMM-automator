@@ -166,7 +166,20 @@ export default function OrdersPage() {
         throw new Error(data.error ?? "Retry failed.");
       }
 
-      setFeedback("Retry queued successfully.");
+      if (data.retry === false) {
+        setFeedback(
+          data.message ?? "Sync completed. No low-balance failed services were found to retry."
+        );
+      } else {
+        const retried = Array.isArray(data.retriedServiceTypes)
+          ? data.retriedServiceTypes.join(", ")
+          : "";
+        setFeedback(
+          retried
+            ? `Retry queued after sync for: ${retried}.`
+            : "Retry queued successfully after sync."
+        );
+      }
       await loadOrders({ page, status: statusFilter });
       await loadStats();
     } catch (error) {
@@ -425,9 +438,9 @@ export default function OrdersPage() {
                     type="button"
                     className="btn-secondary self-start"
                     onClick={() => retryOrder(order.id)}
-                    disabled={retryingOrderId === order.id}
+                    disabled={retryingOrderId === order.id || syncing}
                   >
-                    {retryingOrderId === order.id ? "Retrying..." : "Retry failed"}
+                    {retryingOrderId === order.id ? "Retrying..." : "Retry failed (sync first)"}
                   </button>
                 )}
               </div>
