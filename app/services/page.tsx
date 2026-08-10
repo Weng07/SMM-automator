@@ -335,6 +335,26 @@ export default function ServicesPage() {
       return panelServices.slice(0, 250);
     }
 
+    const isNumericQuery = /^\d+$/.test(q);
+
+    if (isNumericQuery) {
+      return panelServices
+        .filter((service) => String(service.service ?? "").trim().startsWith(q))
+        .sort((a, b) => {
+          const aId = String(a.service ?? "").trim();
+          const bId = String(b.service ?? "").trim();
+          const aNum = Number(aId);
+          const bNum = Number(bId);
+
+          if (Number.isFinite(aNum) && Number.isFinite(bNum)) {
+            return aNum - bNum;
+          }
+
+          return aId.localeCompare(bId);
+        })
+        .slice(0, 250);
+    }
+
     return panelServices
       .filter((service) => {
         const haystack = [
@@ -365,7 +385,7 @@ export default function ServicesPage() {
           <h1 className="display text-2xl font-semibold tracking-tight">Provider slots</h1>
           <p className="text-sm text-[#9aa3c7] max-w-2xl">
             Configure one or more slots per service type. If multiple slots match a link keyword,
-            the system shuffles between those slots automatically.
+            the system uses the first matching slot in sequence.
           </p>
         </div>
       </section>

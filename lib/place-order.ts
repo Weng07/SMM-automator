@@ -218,30 +218,18 @@ function matchesAnyKeyword(link: string, keywords: string[]) {
   return keywords.some((keyword) => normalizedLink.includes(keyword));
 }
 
-function hashString(input: string): number {
-  let hash = 0;
-  for (let index = 0; index < input.length; index += 1) {
-    hash = (hash << 5) - hash + input.charCodeAt(index);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
-function pickShuffledSlot<T extends { slot_index?: number }>(params: {
+function pickSequentialSlot<T extends { slot_index?: number }>(params: {
   candidates: T[];
-  seed: string;
 }) {
-  if (params.candidates.length <= 1) {
-    return params.candidates[0] ?? null;
+  if (params.candidates.length === 0) {
+    return null;
   }
 
-  // Keep ordering stable so hash modulo maps consistently over time.
   const ordered = [...params.candidates].sort(
     (a, b) => (a.slot_index ?? 1) - (b.slot_index ?? 1)
   );
-  // Deterministic distribution: same seed => same slot, different seeds spread across slots.
-  const pick = hashString(params.seed) % ordered.length;
-  return ordered[pick] ?? null;
+
+  return ordered[0] ?? null;
 }
 
 function selectPresetForServiceType(params: {
@@ -310,26 +298,24 @@ function selectPresetForServiceType(params: {
   );
 
   if (keywordMatched.length > 0) {
-    const chosenPreset = pickShuffledSlot({
+    const chosenPreset = pickSequentialSlot({
       candidates: keywordMatched as Array<{ slot_index?: number }>,
-      seed: `${params.platform}:${params.serviceType}:${params.link}:${params.useFallback ? "fallback" : "primary"}`,
     }) as Record<string, unknown> | null;
 
     return {
       preset: chosenPreset,
-      debugSlotDecision: `keyword_match_shuffled:${String((chosenPreset as { slot_index?: unknown } | null)?.slot_index ?? 1)}/${keywordMatched.length}`,
+      debugSlotDecision: `keyword_match_sequential:${String((chosenPreset as { slot_index?: unknown } | null)?.slot_index ?? 1)}/${keywordMatched.length}`,
     };
   }
 
   if (noKeywordSlots.length > 0) {
-    const chosenPreset = pickShuffledSlot({
+    const chosenPreset = pickSequentialSlot({
       candidates: noKeywordSlots as Array<{ slot_index?: number }>,
-      seed: `${params.platform}:${params.serviceType}:${params.link}:${params.useFallback ? "fallback" : "primary"}`,
     }) as Record<string, unknown> | null;
 
     return {
       preset: chosenPreset,
-      debugSlotDecision: `no_keyword_shuffled:${String((chosenPreset as { slot_index?: unknown } | null)?.slot_index ?? 1)}/${noKeywordSlots.length}`,
+      debugSlotDecision: `no_keyword_sequential:${String((chosenPreset as { slot_index?: unknown } | null)?.slot_index ?? 1)}/${noKeywordSlots.length}`,
     };
   }
 

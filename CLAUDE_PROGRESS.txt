@@ -44,3 +44,10 @@
 - Optimized today's bulk low-balance retry speed: the pre-retry sync step now scopes to today's `failed|pending` orders only and skips fallback auto-reorder side effects on this path.
 - This keeps retry behavior focused on today's low-balance submission targets instead of scanning/syncing unrelated statuses.
 - No new SQL migration.
+
+2026-08-10
+- Changed slot routing from shuffled selection to sequential selection: when multiple slots match, the lowest slot index is now used first.
+- Updated Services page guidance text to reflect sequential slot behavior.
+- Tightened Services numeric search so digit-only queries match provider service IDs by ID prefix only, preventing unrelated hits from name/rate/min/max text.
+- Numeric ID results are now shown in ascending ID order.
+- No new SQL migration.
