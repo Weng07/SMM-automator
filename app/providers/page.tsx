@@ -14,6 +14,7 @@ type Provider = {
 type ProviderBalanceMap = Record<string, { balance?: number | string; currency?: string; error?: string }>;
 type ProviderBalanceRow = {
   providerId?: string;
+  provider_id?: string;
   balance?: number | string;
   currency?: string;
   error?: string;
@@ -83,7 +84,12 @@ export default function ProvidersPage() {
       const data = await res.json();
       const rawBalances: ProviderBalanceRow[] = Array.isArray(data.balances) ? data.balances : [];
       const mappedBalances = rawBalances.reduce((acc: ProviderBalanceMap, item: ProviderBalanceRow) => {
-        const providerId = typeof item?.providerId === "string" ? item.providerId : "";
+        const providerId =
+          typeof item?.providerId === "string"
+            ? item.providerId
+            : typeof item?.provider_id === "string"
+              ? item.provider_id
+              : "";
 
         if (!providerId) {
           return acc;
@@ -435,7 +441,7 @@ export default function ProvidersPage() {
                   {balancesLoading
                     ? "Balance checking..."
                     : balances[provider.id]?.error
-                      ? "Balance error"
+                      ? `Balance error: ${balances[provider.id]?.error}`
                       : balances[provider.id]
                         ? `${balances[provider.id].currency} ${Number(
                             balances[provider.id].balance ?? 0

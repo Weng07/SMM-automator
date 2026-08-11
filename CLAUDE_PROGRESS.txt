@@ -56,5 +56,8 @@
 - Fixed provider balance visibility and parsing issues.
 - Fixed Providers page data-shape mismatch by mapping `/api/providers/balances` array results into a providerId-indexed map before rendering row balances.
 - Hardened `lib/provider-balance.ts` response parsing to support nested `data` payloads and provider-declared error/message/status fields, so real balance failures surface correctly instead of silent zero/missing values.
+- Removed internal slot-debug text from Orders badges so users no longer see misleading `no_keyword_*` / slot-decision debug strings in normal UI.
+- Further hardened provider balance fetching with broader payload parsing (JSON-string/object/number, nested `result`/`funds`), plus POST->GET fallback for providers that require query-style balance calls.
+- Providers UI now accepts both `providerId` and `provider_id` row keys and shows concrete balance error text.
 - Validation passed with `npx tsc --noEmit` and `npm run build`.
 - No new SQL migration.

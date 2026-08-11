@@ -9,12 +9,88 @@ type ProviderBalanceResult = {
   error?: string;
 };
 
+function getObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function getStringField(obj: Record<string, unknown> | null, key: string): string | null {
+  if (!obj) {
+    return null;
+  }
+
+  const value = obj[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function getNumberField(obj: Record<string, unknown> | null, key: string): number | null {
+  if (!obj) {
+    return null;
+  }
+
+  const value = obj[key];
+  const parsed = parseBalanceValue(value);
+  return parsed > 0 || value === 0 || value === "0" || value === "0.0" || value === "0.00"
+    ? parsed
+    : null;
+}
+
+function normalizePayload(payload: unknown): unknown {
+  if (typeof payload !== "string") {
+    return payload;
+  }
+
+  const trimmed = payload.trim();
+  if (!trimmed) {
+    return payload;
+  }
+
+  if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return payload;
+    }
+  }
+
+  return payload;
+}
+
 function parseProviderBalanceResponse(payload: unknown): {
   balance: number;
   currency: string;
   error?: string;
 } {
-  if (!payload || typeof payload !== "object") {
+  const normalizedPayload = normalizePayload(payload);
+
+  if (typeof normalizedPayload === "number") {
+    return {
+      balance: normalizedPayload,
+      currency: "USD",
+    };
+  }
+
+  if (typeof normalizedPayload === "string") {
+    const numericValue = parseBalanceValue(normalizedPayload);
+    if (numericValue !== 0 || normalizedPayload.trim() === "0") {
+      return {
+        balance: numericValue,
+        currency: "USD",
+      };
+    }
+  }
+
+  const root = getObject(normalizedPayload);
+  const nestedData = getObject(root?.data);
+  const nestedResult = getObject(root?.result);
+  const nestedBalance = getObject(root?.balance);
+  const nestedFunds = getObject(root?.funds);
+  const candidates = [nestedData, nestedResult, nestedBalance, nestedFunds, root].filter(
+    (item): item is Record<string, unknown> => Boolean(item)
+  );
+
+  if (!root || candidates.length === 0) {
     return {
       balance: 0,
       currency: "USD",
@@ -22,45 +98,67 @@ function parseProviderBalanceResponse(payload: unknown): {
     };
   }
 
-  const root = payload as Record<string, unknown>;
-  const nested = root.data && typeof root.data === "object"
-    ? (root.data as Record<string, unknown>)
-    : null;
-  const candidate = nested ?? root;
+  const errorMessage = candidates
+    .map((candidate) =>
+      getStringField(candidate, "error") ??
+      getStringField(candidate, "message") ??
+      getStringField(candidate, "msg") ??
+      getStringField(candidate, "err")
+    )
+    .find((value) => Boolean(value));
 
-  const errorMessage =
-    typeof candidate.error === "string"
-      ? candidate.error
-      : typeof candidate.message === "string"
-        ? candidate.message
-        : typeof candidate.err === "string"
-          ? candidate.err
-          : null;
+  const status = candidates
+    .map((candidate) => getStringField(candidate, "status"))
+    .find((value) => Boolean(value))
+    ?.toLowerCase();
+
+  const code = candidates
+    .map((candidate) => getStringField(candidate, "code"))
+    .find((value) => Boolean(value))
+    ?.toLowerCase();
+
+  const currency = normalizeCurrency(
+    candidates
+      .map((candidate) => getStringField(candidate, "currency") ?? getStringField(candidate, "currency_code"))
+      .find((value) => Boolean(value))
+  );
+
+  const balance =
+    candidates
+      .map((candidate) =>
+        getNumberField(candidate, "balance") ??
+        getNumberField(candidate, "funds") ??
+        getNumberField(candidate, "amount")
+      )
+      .find((value) => value !== null) ?? 0;
 
   if (errorMessage && errorMessage.trim()) {
     return {
       balance: 0,
-      currency: normalizeCurrency(candidate.currency),
+      currency,
       error: errorMessage.trim(),
     };
   }
 
-  const status =
-    typeof candidate.status === "string"
-      ? candidate.status.trim().toLowerCase()
-      : null;
-
   if (status && ["error", "failed", "fail", "denied", "rejected"].includes(status)) {
     return {
       balance: 0,
-      currency: normalizeCurrency(candidate.currency),
+      currency,
       error: "Provider returned a failed balance status.",
     };
   }
 
+  if (code && ["error", "failed", "fail"].includes(code)) {
+    return {
+      balance: 0,
+      currency,
+      error: "Provider returned a failed balance code.",
+    };
+  }
+
   return {
-    balance: parseBalanceValue(candidate.balance),
-    currency: normalizeCurrency(candidate.currency),
+    balance,
+    currency,
   };
 }
 
@@ -139,33 +237,51 @@ export async function getProviderBalances(): Promise<ProviderBalanceResult[]> {
       try {
         const apiUrl = normalizeApiUrl(provider.api_url);
 
-        const body = new URLSearchParams({
+        const params = new URLSearchParams({
           key: provider.api_key,
           action: "balance",
         });
 
-        const res = await fetch(apiUrl, {
+        const postRes = await fetch(apiUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
           },
-          body,
+          body: params,
         });
 
-        const data = await res.json().catch(() => null);
+        const postText = await postRes.text();
+        const postParsed = parseProviderBalanceResponse(postText);
 
-        if (!res.ok) {
-          return {
-            providerId: provider.id,
-            providerName: provider.name,
-            apiUrl: provider.api_url,
-            balance: 0,
-            currency: "USD",
-            error: `Balance request failed with status ${res.status}.`,
-          };
+        let parsed = postParsed;
+        let finalError =
+          !postRes.ok && postParsed.error
+            ? `${postParsed.error} (status ${postRes.status})`
+            : !postRes.ok
+              ? `Balance request failed with status ${postRes.status}.`
+              : postParsed.error;
+
+        const shouldTryGet =
+          !postRes.ok ||
+          (postParsed.balance === 0 &&
+            typeof postParsed.error === "string" &&
+            postParsed.error.toLowerCase().includes("unexpected"));
+
+        if (shouldTryGet) {
+          const separator = apiUrl.includes("?") ? "&" : "?";
+          const getUrl = `${apiUrl}${separator}${params.toString()}`;
+          const getRes = await fetch(getUrl, {
+            method: "GET",
+            cache: "no-store",
+          });
+          const getText = await getRes.text();
+          const getParsed = parseProviderBalanceResponse(getText);
+
+          if (getRes.ok || !getParsed.error || getParsed.balance > 0) {
+            parsed = getParsed;
+            finalError = getRes.ok ? getParsed.error : `${getParsed.error ?? "Balance request failed"} (status ${getRes.status})`;
+          }
         }
-
-        const parsed = parseProviderBalanceResponse(data);
 
         return {
           providerId: provider.id,
@@ -173,7 +289,7 @@ export async function getProviderBalances(): Promise<ProviderBalanceResult[]> {
           apiUrl: provider.api_url,
           balance: parsed.balance,
           currency: parsed.currency,
-          error: parsed.error,
+          error: finalError,
         };
       } catch (error) {
         return {
@@ -254,11 +370,11 @@ export async function convertTotalsToCurrency(
 ) {
   const rates = await getUsdExchangeRates();
 
-    const targetRate = rates[targetCurrency];
+  const targetRate = rates[targetCurrency];
 
-    if (typeof targetRate !== "number") {
+  if (typeof targetRate !== "number") {
     throw new Error(`Unsupported target currency: ${targetCurrency}`);
-    }
+  }
 
   let convertedTotal = 0;
 
@@ -266,7 +382,7 @@ export async function convertTotalsToCurrency(
     const sourceRate = rates[sourceCurrency];
 
     if (typeof sourceRate !== "number") {
-    continue;
+      continue;
     }
 
     const amountInUsd = amount / sourceRate;
