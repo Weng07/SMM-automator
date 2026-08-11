@@ -12,6 +12,12 @@ type Provider = {
 };
 
 type ProviderBalanceMap = Record<string, { balance?: number | string; currency?: string; error?: string }>;
+type ProviderBalanceRow = {
+  providerId?: string;
+  balance?: number | string;
+  currency?: string;
+  error?: string;
+};
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
@@ -75,7 +81,24 @@ export default function ProvidersPage() {
     try {
       const res = await fetch("/api/providers/balances");
       const data = await res.json();
-      setBalances(data.balances ?? {});
+      const rawBalances: ProviderBalanceRow[] = Array.isArray(data.balances) ? data.balances : [];
+      const mappedBalances = rawBalances.reduce((acc: ProviderBalanceMap, item: ProviderBalanceRow) => {
+        const providerId = typeof item?.providerId === "string" ? item.providerId : "";
+
+        if (!providerId) {
+          return acc;
+        }
+
+        acc[providerId] = {
+          balance: item.balance,
+          currency: item.currency,
+          error: item.error,
+        };
+
+        return acc;
+      }, {} as ProviderBalanceMap);
+
+      setBalances(mappedBalances);
       setTotalsByCurrency(data.totalsByCurrency ?? {});
     } catch (error) {
       setMsg(`Error: ${getErrorMessage(error)}`);

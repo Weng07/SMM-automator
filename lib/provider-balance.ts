@@ -9,6 +9,61 @@ type ProviderBalanceResult = {
   error?: string;
 };
 
+function parseProviderBalanceResponse(payload: unknown): {
+  balance: number;
+  currency: string;
+  error?: string;
+} {
+  if (!payload || typeof payload !== "object") {
+    return {
+      balance: 0,
+      currency: "USD",
+      error: "Unexpected balance response from provider.",
+    };
+  }
+
+  const root = payload as Record<string, unknown>;
+  const nested = root.data && typeof root.data === "object"
+    ? (root.data as Record<string, unknown>)
+    : null;
+  const candidate = nested ?? root;
+
+  const errorMessage =
+    typeof candidate.error === "string"
+      ? candidate.error
+      : typeof candidate.message === "string"
+        ? candidate.message
+        : typeof candidate.err === "string"
+          ? candidate.err
+          : null;
+
+  if (errorMessage && errorMessage.trim()) {
+    return {
+      balance: 0,
+      currency: normalizeCurrency(candidate.currency),
+      error: errorMessage.trim(),
+    };
+  }
+
+  const status =
+    typeof candidate.status === "string"
+      ? candidate.status.trim().toLowerCase()
+      : null;
+
+  if (status && ["error", "failed", "fail", "denied", "rejected"].includes(status)) {
+    return {
+      balance: 0,
+      currency: normalizeCurrency(candidate.currency),
+      error: "Provider returned a failed balance status.",
+    };
+  }
+
+  return {
+    balance: parseBalanceValue(candidate.balance),
+    currency: normalizeCurrency(candidate.currency),
+  };
+}
+
 function normalizeApiUrl(apiUrl: string) {
   return apiUrl.replace(/\/+$/, "");
 }
@@ -110,15 +165,15 @@ export async function getProviderBalances(): Promise<ProviderBalanceResult[]> {
           };
         }
 
-        const balance = parseBalanceValue(data?.balance);
-        const currency = normalizeCurrency(data?.currency);
+        const parsed = parseProviderBalanceResponse(data);
 
         return {
           providerId: provider.id,
           providerName: provider.name,
           apiUrl: provider.api_url,
-          balance,
-          currency,
+          balance: parsed.balance,
+          currency: parsed.currency,
+          error: parsed.error,
         };
       } catch (error) {
         return {

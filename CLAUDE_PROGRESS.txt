@@ -51,3 +51,10 @@
 - Tightened Services numeric search so digit-only queries match provider service IDs by ID prefix only, preventing unrelated hits from name/rate/min/max text.
 - Numeric ID results are now shown in ascending ID order.
 - No new SQL migration.
+
+2026-08-11
+- Fixed provider balance visibility and parsing issues.
+- Fixed Providers page data-shape mismatch by mapping `/api/providers/balances` array results into a providerId-indexed map before rendering row balances.
+- Hardened `lib/provider-balance.ts` response parsing to support nested `data` payloads and provider-declared error/message/status fields, so real balance failures surface correctly instead of silent zero/missing values.
+- Validation passed with `npx tsc --noEmit` and `npm run build`.
+- No new SQL migration.
