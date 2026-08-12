@@ -84,6 +84,31 @@ async function findOldestAvailablePool(platform: Platform) {
   return null;
 }
 
+function poolMatchesKeywords(
+  pool: { name?: string | null; category?: string | null },
+  keywords: string[]
+) {
+  if (keywords.length === 0) {
+    return true;
+  }
+
+  const normalizedName = String(pool.name ?? "").trim().toLowerCase();
+  const normalizedCategory = String(pool.category ?? "").trim().toLowerCase();
+
+  return keywords.some((keyword) => {
+    const normalizedKeyword = String(keyword).trim().toLowerCase();
+
+    if (!normalizedKeyword) {
+      return false;
+    }
+
+    return (
+      normalizedCategory === normalizedKeyword ||
+      normalizedName.includes(normalizedKeyword)
+    );
+  });
+}
+
 function isCommentServiceType(serviceType: string) {
   return serviceType === "comments";
 }
@@ -338,13 +363,20 @@ async function findOldestAvailablePoolForCategories(params: {
     .from("comment_pools")
     .select("id, name, category, created_at")
     .eq("platform", params.platform)
-    .in("category", params.categories)
     .order("created_at", { ascending: true });
 
   if (error) throw error;
   if (!pools || pools.length === 0) return null;
 
-  for (const pool of pools) {
+  const matchingPools = pools.filter((pool) =>
+    poolMatchesKeywords(pool, params.categories)
+  );
+
+  if (matchingPools.length === 0) {
+    return null;
+  }
+
+  for (const pool of matchingPools) {
     const { count, error: countError } = await supabase
       .from("comment_pool_items")
       .select("id", { count: "exact", head: true })
@@ -794,7 +826,7 @@ export async function submitOrderForLink(params: {
         if (poolId) {
           const { data: poolRow, error: poolErr } = await supabase
             .from("comment_pools")
-            .select("id, category, platform")
+            .select("id, name, category, platform")
             .eq("id", poolId)
             .single();
 
@@ -817,8 +849,7 @@ export async function submitOrderForLink(params: {
 
           if (
             effectiveKeywords.length > 0 &&
-            poolRow.category &&
-            !effectiveKeywords.includes(poolRow.category)
+            !poolMatchesKeywords(poolRow, effectiveKeywords)
           ) {
             results.push({
               service_type: serviceType,
@@ -831,7 +862,7 @@ export async function submitOrderForLink(params: {
               socpanel_service_id: serviceId,
               quantity: effectiveQuantity,
               debug_slot_decision: debugSlotDecision,
-              error: `Selected pool category is ${poolRow.category ?? "uncategorized"} and does not match this slot.`,
+              error: `Selected comment pool does not match this slot's keywords.`,
             });
             continue;
           }

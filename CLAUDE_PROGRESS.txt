@@ -59,5 +59,6 @@
 - Removed internal slot-debug text from Orders badges so users no longer see misleading `no_keyword_*` / slot-decision debug strings in normal UI.
 - Further hardened provider balance fetching with broader payload parsing (JSON-string/object/number, nested `result`/`funds`), plus POST->GET fallback for providers that require query-style balance calls.
 - Providers UI now accepts both `providerId` and `provider_id` row keys and shows concrete balance error text.
+- Changed X comment-pool routing to keyword-based matching from Services presets: comment pool selection now matches slot keywords against uploaded pool names, with legacy single `category` only as fallback.
 - Validation passed with `npx tsc --noEmit` and `npm run build`.
 - No new SQL migration.
