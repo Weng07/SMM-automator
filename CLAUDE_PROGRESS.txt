@@ -60,5 +60,6 @@
 - Further hardened provider balance fetching with broader payload parsing (JSON-string/object/number, nested `result`/`funds`), plus POST->GET fallback for providers that require query-style balance calls.
 - Providers UI now accepts both `providerId` and `provider_id` row keys and shows concrete balance error text.
 - Changed X comment-pool routing to keyword-based matching from Services presets: comment pool selection now matches slot keywords against uploaded pool names, with legacy single `category` only as fallback.
+- Narrowed X comment-pool selection further so it uses only the subset of slot keywords that actually match the current link, preventing older pools from another keyword in the same slot (for example `thanos`) from winning incorrectly.
 - Validation passed with `npx tsc --noEmit` and `npm run build`.
 - No new SQL migration.

@@ -243,6 +243,15 @@ function matchesAnyKeyword(link: string, keywords: string[]) {
   return keywords.some((keyword) => normalizedLink.includes(keyword));
 }
 
+function getMatchedKeywordsForLink(link: string, keywords: string[]) {
+  if (keywords.length === 0) {
+    return [];
+  }
+
+  const normalizedLink = decodeURIComponent(link).toLowerCase();
+  return keywords.filter((keyword) => normalizedLink.includes(keyword));
+}
+
 function pickSequentialSlot<T extends { slot_index?: number }>(params: {
   candidates: T[];
 }) {
@@ -819,7 +828,14 @@ export async function submitOrderForLink(params: {
           continue;
         }
 
-        effectiveKeywordsForResult = effectiveKeywords;
+        const matchedPoolKeywords = getMatchedKeywordsForLink(
+          params.link,
+          effectiveKeywords
+        );
+        const poolSelectionKeywords =
+          matchedPoolKeywords.length > 0 ? matchedPoolKeywords : effectiveKeywords;
+
+        effectiveKeywordsForResult = poolSelectionKeywords;
 
         let poolId = params.commentPoolId ?? null;
 
@@ -848,13 +864,13 @@ export async function submitOrderForLink(params: {
           }
 
           if (
-            effectiveKeywords.length > 0 &&
-            !poolMatchesKeywords(poolRow, effectiveKeywords)
+            poolSelectionKeywords.length > 0 &&
+            !poolMatchesKeywords(poolRow, poolSelectionKeywords)
           ) {
             results.push({
               service_type: serviceType,
               slot_index: preset.slot_index ?? 1,
-              keywords: effectiveKeywords,
+              keywords: poolSelectionKeywords,
               is_fallback: Boolean(preset.is_fallback),
               api_provider_id: providerId,
               provider_name: providerName,
@@ -871,19 +887,19 @@ export async function submitOrderForLink(params: {
         if (!poolId) {
           const autoPool = await findOldestAvailablePoolForCategories({
             platform: params.platform,
-            categories: effectiveKeywords,
+            categories: poolSelectionKeywords,
           });
 
           if (!autoPool) {
             const categoryHint =
-              effectiveKeywords.length > 0
-                ? ` in categories [${effectiveKeywords.join(", ")}]`
+              poolSelectionKeywords.length > 0
+                ? ` in categories [${poolSelectionKeywords.join(", ")}]`
                 : "";
 
             results.push({
               service_type: serviceType,
               slot_index: preset.slot_index ?? 1,
-              keywords: effectiveKeywords,
+              keywords: poolSelectionKeywords,
               is_fallback: Boolean(preset.is_fallback),
               api_provider_id: providerId,
               provider_name: providerName,
