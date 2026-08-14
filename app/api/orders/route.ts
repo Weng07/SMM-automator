@@ -241,9 +241,13 @@ export async function POST(req: NextRequest) {
         ? Math.max(1, Math.min(parsedLimit, 200))
         : 25;
 
+      const todayWindow = getTodayWindow();
       const syncResult = await syncOrdersWithProvider({
         limit,
         orderId: typeof orderId === "string" ? orderId : undefined,
+        createdAtGte: todayWindow.start,
+        createdAtLt: todayWindow.end,
+        statusIn: ["failed", "pending"],
       });
 
       return NextResponse.json(syncResult);
@@ -281,7 +285,7 @@ export async function POST(req: NextRequest) {
       const services = Array.isArray(orderRow.services_ordered)
         ? (orderRow.services_ordered as ServiceEntry[])
         : [];
-      const retryServiceTypes = getLowBalanceRetryServiceTypes(services);
+      const retryServiceTypes = getRetryableServiceTypes(services);
 
       if (retryServiceTypes.length === 0) {
         return NextResponse.json({
@@ -289,7 +293,7 @@ export async function POST(req: NextRequest) {
           retry: false,
           orderId: trimmedOrderId,
           message:
-            "Sync completed. No low-balance failed services were found to retry.",
+            "Sync completed. No retryable failed services were found for this order.",
           syncResult,
         });
       }
@@ -353,7 +357,7 @@ export async function POST(req: NextRequest) {
         const services = Array.isArray(order.services_ordered)
           ? (order.services_ordered as ServiceEntry[])
           : [];
-        const retryServiceTypes = getLowBalanceRetryServiceTypes(services);
+        const retryServiceTypes = getRetryableServiceTypes(services);
 
         if (retryServiceTypes.length === 0) {
           continue;
@@ -494,6 +498,42 @@ function isLowBalanceFailureMessage(error: unknown): boolean {
   );
 }
 
+function isDuplicateFailureMessage(error: unknown): boolean {
+  if (typeof error !== "string") {
+    return false;
+  }
+
+  const normalized = error.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return /duplicate|already submitted successfully|already received|already exists|already in queue|same link/i.test(
+    normalized
+  );
+}
+
+function getRetryableServiceTypes(services: ServiceEntry[]): string[] {
+  return [...new Set(
+    services
+      .filter((service) => {
+        if (service.skipped) {
+          return false;
+        }
+
+        const errorMessage = typeof service.error === "string" ? service.error : "";
+        if (isDuplicateFailureMessage(errorMessage)) {
+          return false;
+        }
+
+        const statusText = typeof service.status === "string" ? service.status : "";
+        return Boolean(errorMessage) || /failed|pending/i.test(statusText);
+      })
+      .map((service) => String(service.service_type ?? "").trim())
+      .filter(Boolean)
+  )];
+}
+
 function getLowBalanceRetryServiceTypes(services: ServiceEntry[]): string[] {
   return [...new Set(
     services
@@ -501,6 +541,19 @@ function getLowBalanceRetryServiceTypes(services: ServiceEntry[]): string[] {
       .map((service) => String(service.service_type ?? "").trim())
       .filter(Boolean)
   )];
+}
+
+function getTodayWindow() {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const tomorrowStart = new Date(todayStart);
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+
+  return {
+    start: todayStart.toISOString(),
+    end: tomorrowStart.toISOString(),
+  };
 }
 
 async function syncOrdersWithProvider(params: {

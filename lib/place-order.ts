@@ -429,18 +429,28 @@ async function wasServiceAlreadySubmitted(params: {
       : [];
 
     const matchingService = services.find((service: Record<string, unknown>) => {
-      const hasSuccessfulId = service.panel_order_id || service.socpanel_order_id;
+      const providerOrderId = service.panel_order_id || service.socpanel_order_id;
       const errorMessage = typeof service.error === "string" ? service.error : "";
+      const status = typeof service.status === "string" ? service.status.toLowerCase() : "";
       const isCanceled = Boolean(
         errorMessage &&
           /canceled|cancelled|cancel|failed|error|declined|rejected|denied/i.test(errorMessage)
       );
+      const isDuplicateLike = Boolean(
+        errorMessage &&
+          /duplicate|already submitted successfully|already received|already exists|already in queue|same link/i.test(errorMessage)
+      );
+      const isProviderActiveStatus = Boolean(
+        status && /pending|processing|in_progress|partial|submitted|queued|accepted/.test(status)
+      );
+      const hasProviderEvidence = Boolean(providerOrderId) || isProviderActiveStatus;
 
       return (
         normalizeServiceCategory(String(service.service_type ?? "")) === targetCategory &&
         !service.skipped &&
-        hasSuccessfulId &&
-        !isCanceled
+        hasProviderEvidence &&
+        !isCanceled &&
+        !isDuplicateLike
       );
     });
 

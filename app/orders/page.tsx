@@ -169,7 +169,7 @@ export default function OrdersPage() {
 
       if (data.retry === false) {
         setFeedback(
-          data.message ?? "Sync completed. No low-balance failed services were found to retry."
+          data.message ?? "Sync completed. No retryable failed services were found for this order."
         );
       } else {
         const retried = Array.isArray(data.retriedServiceTypes)
@@ -247,7 +247,7 @@ export default function OrdersPage() {
       }
 
       setFeedback(
-        `Synced today's orders first, scanned ${data.scannedOrders ?? 0} order${(data.scannedOrders ?? 0) === 1 ? "" : "s"}, found ${data.eligibleOrders ?? 0} low-balance order${(data.eligibleOrders ?? 0) === 1 ? "" : "s"}, retried ${data.retriedOrders ?? 0} order${(data.retriedOrders ?? 0) === 1 ? "" : "s"} (${data.retriedServices ?? 0} service type${(data.retriedServices ?? 0) === 1 ? "" : "s"})${(data.failedRetries ?? 0) > 0 ? `, ${data.failedRetries} failed` : ""}.`
+        `Synced today's orders first, scanned ${data.scannedOrders ?? 0} order${(data.scannedOrders ?? 0) === 1 ? "" : "s"}, found ${data.eligibleOrders ?? 0} retryable order${(data.eligibleOrders ?? 0) === 1 ? "" : "s"}, retried ${data.retriedOrders ?? 0} order${(data.retriedOrders ?? 0) === 1 ? "" : "s"} (${data.retriedServices ?? 0} service type${(data.retriedServices ?? 0) === 1 ? "" : "s"})${(data.failedRetries ?? 0) > 0 ? `, ${data.failedRetries} failed` : ""}.`
       );
 
       setLoading(true);
@@ -342,8 +342,8 @@ export default function OrdersPage() {
                 className={retryingLowBalanceAll ? "animate-spin" : ""}
               />
               {retryingLowBalanceAll
-                ? "Retrying today's low balance..."
-                : "Retry today's low balance"}
+                ? "Retrying today's failed orders..."
+                : "Retry today's failed orders"}
             </button>
 
             <button

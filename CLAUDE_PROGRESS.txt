@@ -63,3 +63,10 @@
 - Narrowed X comment-pool selection further so it uses only the subset of slot keywords that actually match the current link, preventing older pools from another keyword in the same slot (for example `thanos`) from winning incorrectly.
 - Validation passed with `npx tsc --noEmit` and `npm run build`.
 - No new SQL migration.
+
+2026-08-14
+- Fixed order resending so it retries all non-duplicate failed services instead of low-balance-only failures.
+- Provider-side sync now keeps active/provider-confirmed link matches and blocks re-sends for already received links while allowing other failed service types to be retried.
+- Bulk retry/sync remains scoped to today's orders only, ensuring historic rows are not auto-requeued.
+- Validation passed with `npx tsc --noEmit`.
+- No new SQL migration.
